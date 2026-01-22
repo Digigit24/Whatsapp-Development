@@ -600,6 +600,30 @@ class WhatsAppServiceController extends BaseController
     }
 
     /**
+     * Centralized WhatsApp Webhook for React SaaS
+     * Accepts tenant_id as query parameter
+     *
+     * @param BaseRequestTwo $request
+     * @return void
+     */
+    public function centralWebhook(BaseRequestTwo $request)
+    {
+        // Extract tenant_id from query parameter
+        $tenantId = $request->query('tenant_id');
+
+        // Validate tenant_id is provided
+        if (!$tenantId) {
+            return response()->json([
+                'error' => 'tenant_id query parameter is required',
+                'message' => 'Please provide tenant_id in the query string'
+            ], 400);
+        }
+
+        // Delegate to existing webhook method with tenant_id
+        return $this->webhook($request, $tenantId);
+    }
+
+    /**
      * WhatsApp Webhook for the notifications from WhatsApp
      *
      * @param BaseRequestTwo $request

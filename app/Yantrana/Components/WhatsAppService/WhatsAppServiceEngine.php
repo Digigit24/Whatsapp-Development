@@ -3017,6 +3017,14 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
         if (__isEmpty($webhookEntry)) {
             return response()->json(['status' => 'failed'], 500);
         }
+
+        // Update last webhook received timestamp for monitoring
+        $currentSettings = getVendorSettings('whatsapp_cloud_api_setup', null, null, $vendorUid);
+        if ($currentSettings) {
+            $currentSettings['last_webhook_received_at'] = now()->toDateTimeString();
+            $this->vendorSettingsEngine->updateProcess('whatsapp_cloud_api_setup', $currentSettings, $vendorId);
+        }
+
         if (getAppSettings('enable_queue_jobs_for_campaigns')) {
             ProcessMessageWebhookJob::dispatch();
         }
@@ -3046,6 +3054,14 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
             // abort(403, 'no active subscription');
             return false;
         }
+
+        // Update last webhook received timestamp for monitoring (direct processing)
+        $currentSettings = getVendorSettings('whatsapp_cloud_api_setup', null, null, $vendorUid);
+        if ($currentSettings) {
+            $currentSettings['last_webhook_received_at'] = now()->toDateTimeString();
+            $this->vendorSettingsEngine->updateProcess('whatsapp_cloud_api_setup', $currentSettings, $vendorId);
+        }
+
         $messageEntry = $request->get('entry');
         $webhookField = Arr::get($messageEntry, '0.changes.0.field');
         switch ($webhookField) {

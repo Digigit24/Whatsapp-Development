@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Yantrana\Components\Auth\Controllers\ApiUserController;
 use App\Yantrana\Components\Contact\Controllers\ContactController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceController;
+use App\Yantrana\Components\WhatsAppService\Controllers\TenantWebhookController;
+use App\Yantrana\Components\WhatsAppService\Controllers\SuperAdminWebhookController;
 use App\Yantrana\Components\Media\Controllers\MediaController;
 use App\Yantrana\Components\User\Controllers\UserController;
 
@@ -112,6 +114,13 @@ Route::group(['middleware' => 'guest'], function () {
     });
 });
 // vendor authenticated routes
+// Centralized WhatsApp Webhook Route (for React SaaS)
+// Accepts tenant_id as query parameter: /api/whatsapp-webhook?tenant_id={vendorUid}
+Route::any('whatsapp-webhook', [
+    WhatsAppServiceController::class,
+    'centralWebhook',
+])->name('api.centralized_whatsapp_webhook');
+
 Route::group([
     'middleware' => 'app_api.vendor.authenticate',
 ], function () {
@@ -233,4 +242,77 @@ Route::group([
         AuthController::class,
         'accountActivation',
     ])->name('api.user.account.activation');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Tenant Webhook Management APIs (for React SaaS)
+|--------------------------------------------------------------------------
+| These routes allow tenants to manage their webhooks
+*/
+Route::prefix('v1/tenants/{vendorUid}/webhook')->group(function () {
+    // Generate webhook URL for tenant
+    Route::post('generate', [
+        TenantWebhookController::class,
+        'generateWebhookUrl'
+    ])->name('api.tenant.webhook.generate');
+
+    Route::get('generate', [
+        TenantWebhookController::class,
+        'generateWebhookUrl'
+    ])->name('api.tenant.webhook.generate.get');
+
+    // Get webhook status
+    Route::get('status', [
+        TenantWebhookController::class,
+        'getWebhookStatus'
+    ])->name('api.tenant.webhook.status');
+
+    // Verify webhook connection
+    Route::post('verify', [
+        TenantWebhookController::class,
+        'verifyWebhook'
+    ])->name('api.tenant.webhook.verify');
+
+    Route::get('verify', [
+        TenantWebhookController::class,
+        'verifyWebhook'
+    ])->name('api.tenant.webhook.verify.get');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Superadmin Webhook Monitoring APIs (for React Admin Panel)
+|--------------------------------------------------------------------------
+| These routes allow superadmin to monitor all tenant webhooks
+*/
+Route::prefix('superadmin/webhooks')->group(function () {
+    // List all tenant webhooks
+    Route::get('list', [
+        SuperAdminWebhookController::class,
+        'listAllWebhooks'
+    ])->name('api.superadmin.webhooks.list');
+
+    // Get webhook health metrics
+    Route::get('health', [
+        SuperAdminWebhookController::class,
+        'getWebhookHealth'
+    ])->name('api.superadmin.webhooks.health');
+
+    // Test specific tenant webhook
+    Route::post('test/{vendorUid}', [
+        SuperAdminWebhookController::class,
+        'testWebhook'
+    ])->name('api.superadmin.webhooks.test');
+
+    Route::get('test/{vendorUid}', [
+        SuperAdminWebhookController::class,
+        'testWebhook'
+    ])->name('api.superadmin.webhooks.test.get');
+
+    // Get detailed webhook info for tenant
+    Route::get('details/{vendorUid}', [
+        SuperAdminWebhookController::class,
+        'getWebhookDetails'
+    ])->name('api.superadmin.webhooks.details');
 });
