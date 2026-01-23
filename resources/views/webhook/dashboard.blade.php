@@ -4,12 +4,12 @@
 @include('users.partials.header', [
 'title' => __tr('Webhook Management'),
 'description' => __tr('Monitor and manage WhatsApp webhooks for all tenants'),
-'class' => 'col-lg-7'
+'class' => 'col-lg-12'
 ])
 
-<div class="container-fluid">
+<div class="container-fluid mt-md--6">
     <!-- Webhook Health Stats -->
-    <div class="row mb-4 mt-md--5">
+    <div class="row mb-4">
         <div class="col-xl-3 col-lg-6">
             <div class="card card-stats mb-4 mb-xl-0">
                 <div class="card-body">
@@ -125,6 +125,27 @@
     </div>
 </div>
 
+<!-- Generate Webhook Modal -->
+<div class="modal fade" id="generateWebhookModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ __tr('Webhook Configuration') }} - <span id="webhookTenantName"></span></h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" id="generateWebhookContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Webhook Details Modal -->
 <div class="modal fade" id="webhookDetailsModal" tabindex="-1" role="dialog">
     <div class="modal-dialog modal-lg" role="document">
@@ -198,6 +219,9 @@
                                 <td><small>${lastActivity}</small></td>
                                 <td><small>${webhook.phone_number_id || '-'}</small></td>
                                 <td>
+                                    <button class="btn btn-sm btn-primary" onclick="generateWebhookUrl('${webhook.tenant_id}', '${webhook.tenant_name}')">
+                                        <i class="fa fa-link"></i> {{ __tr('Webhook') }}
+                                    </button>
                                     <button class="btn btn-sm btn-info" onclick="viewWebhookDetails('${webhook.tenant_id}')">
                                         <i class="fa fa-eye"></i> {{ __tr('Details') }}
                                     </button>
@@ -223,6 +247,140 @@
             'verified_but_inactive': '<span class="badge badge-warning">Verified</span>'
         };
         return badges[status] || '<span class="badge badge-secondary">Unknown</span>';
+    }
+
+    // Generate/View Webhook URL
+    function generateWebhookUrl(tenantId, tenantName) {
+        $('#generateWebhookModal').modal('show');
+        document.getElementById('webhookTenantName').textContent = tenantName;
+        document.getElementById('generateWebhookContent').innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+            </div>
+        `;
+
+        fetch(`/api/v1/tenants/${tenantId}/webhook/generate`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const webhook = data.data;
+                    let html = `
+                        <div class="alert alert-info">
+                            <i class="fa fa-info-circle"></i> {{ __tr('Use these credentials to register webhook in Meta Business Manager') }}
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-control-label"><strong>{{ __tr('Webhook URL') }}</strong></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="webhookUrl" value="${webhook.webhook_url}" readonly>
+                                <div class="input-group-append">
+                                    <button class="btn btn-primary" onclick="copyToClipboard('webhookUrl')">
+                                        <i class="fa fa-copy"></i> {{ __tr('Copy') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-control-label"><strong>{{ __tr('Verify Token') }}</strong></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="verifyToken" value="${webhook.verify_token}" readonly>
+                                <div class="input-group-append">
+                                    <button class="btn btn-primary" onclick="copyToClipboard('verifyToken')">
+                                        <i class="fa fa-copy"></i> {{ __tr('Copy') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>{{ __tr('Status') }}:</strong>
+                                    ${webhook.is_verified ?
+                                        '<span class="badge badge-success">✅ {{ __tr("Verified") }}</span>' :
+                                        '<span class="badge badge-warning">⏳ {{ __tr("Not Verified") }}</span>'
+                                    }
+                                </p>
+                                ${webhook.verified_at ?
+                                    `<p><strong>{{ __tr('Verified At') }}:</strong><br><small>${new Date(webhook.verified_at).toLocaleString()}</small></p>` :
+                                    ''
+                                }
+                            </div>
+                            <div class="col-md-6">
+                                ${webhook.last_webhook_received_at ?
+                                    `<p><strong>{{ __tr('Last Activity') }}:</strong><br><small>${new Date(webhook.last_webhook_received_at).toLocaleString()}</small></p>` :
+                                    '<p><strong>{{ __tr("Last Activity") }}:</strong><br><small class="text-muted">{{ __tr("No activity yet") }}</small></p>'
+                                }
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <div class="alert alert-success">
+                            <h5>{{ __tr('Setup Instructions') }}</h5>
+                            <ol class="mb-0">
+                                <li>{{ __tr('Copy the Webhook URL and Verify Token above') }}</li>
+                                <li>{{ __tr('Go to Meta Business Manager') }}</li>
+                                <li>{{ __tr('Navigate to WhatsApp > Configuration > Webhook') }}</li>
+                                <li>{{ __tr('Paste the Webhook URL') }}</li>
+                                <li>{{ __tr('Paste the Verify Token') }}</li>
+                                <li>{{ __tr('Click "Verify and Save"') }}</li>
+                                <li>{{ __tr('Subscribe to "messages" webhook field') }}</li>
+                            </ol>
+                        </div>
+                    `;
+                    document.getElementById('generateWebhookContent').innerHTML = html;
+                } else {
+                    document.getElementById('generateWebhookContent').innerHTML = `
+                        <div class="alert alert-danger">{{ __tr('Error generating webhook URL') }}</div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error generating webhook URL:', error);
+                document.getElementById('generateWebhookContent').innerHTML = `
+                    <div class="alert alert-danger">{{ __tr('Error loading webhook information') }}</div>
+                `;
+            });
+    }
+
+    // Copy to clipboard function
+    function copyToClipboard(elementId) {
+        const element = document.getElementById(elementId);
+        element.select();
+        element.setSelectionRange(0, 99999); // For mobile devices
+
+        try {
+            document.execCommand('copy');
+            // Show success message
+            showNotification('{{ __tr("Copied to clipboard!") }}', 'success');
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            showNotification('{{ __tr("Failed to copy") }}', 'error');
+        }
+    }
+
+    // Show notification
+    function showNotification(message, type) {
+        const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+        const notification = `
+            <div class="alert ${alertClass} alert-dismissible fade show" role="alert" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+                ${message}
+                <button type="button" class="close" data-dismiss="alert">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', notification);
+
+        // Auto-dismiss after 3 seconds
+        setTimeout(() => {
+            $('.alert').alert('close');
+        }, 3000);
     }
 
     // View webhook details
