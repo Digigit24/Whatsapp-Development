@@ -137,6 +137,10 @@ Route::middleware([
                 return view('vendors.list');
             })->name('central.vendors');
 
+            Route::get('/webhooks', function () {
+                return view('webhook.dashboard');
+            })->name('central.webhooks.dashboard');
+
             Route::get('/{vendorIdOrUid}/details', [
                 vendorController::class,
                 'vendorDetails',
