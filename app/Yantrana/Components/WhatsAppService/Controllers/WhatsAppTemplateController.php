@@ -516,33 +516,32 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplates($vendorUid)
     {
-        $templates = $this->whatsAppTemplateEngine->prepareApprovedTemplates();
+        $vendorId = getVendorId();
 
-        if ($templates->success()) {
-            $templateData = $templates->data()['whatsAppTemplates']->map(function ($template) {
-                return [
-                    '_uid' => $template->_uid,
-                    'template_name' => $template->template_name,
-                    'template_id' => $template->template_id,
-                    'language' => $template->language,
-                    'category' => $template->category,
-                    'status' => $template->status,
-                    'template_data' => $template->__data['template'] ?? null,
-                ];
-            });
+        // Query templates directly for the vendor
+        $templates = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
+            'vendors__id' => $vendorId,
+            'status' => 'APPROVED',
+        ])->latest()->get();
 
-            return processExternalApiResponse([
-                'result' => 'success',
-                'message' => __tr('Templates fetched successfully'),
-                'data' => [
-                    'templates' => $templateData,
-                ],
-            ]);
-        }
+        $templateData = $templates->map(function ($template) {
+            return [
+                '_uid' => $template->_uid,
+                'template_name' => $template->template_name,
+                'template_id' => $template->template_id,
+                'language' => $template->language,
+                'category' => $template->category,
+                'status' => $template->status,
+                'template_data' => $template->__data['template'] ?? null,
+            ];
+        });
 
         return processExternalApiResponse([
-            'result' => 'failed',
-            'message' => __tr('Failed to fetch templates'),
+            'result' => 'success',
+            'message' => __tr('Templates fetched successfully'),
+            'data' => [
+                'templates' => $templateData,
+            ],
         ]);
     }
 
