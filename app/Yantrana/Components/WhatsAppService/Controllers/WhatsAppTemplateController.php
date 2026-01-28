@@ -537,17 +537,10 @@ class WhatsAppTemplateController extends BaseController
             ];
         });
 
-        // DEBUG: Return with debug info to diagnose the issue
-        return response()->json([
+        return processExternalApiResponse([
             'result' => 'success',
             'message' => __tr('Templates fetched successfully'),
-            'data' => $templateData,
-            '_debug' => [
-                'vendor_id_used' => $vendorId,
-                'vendor_uid' => $vendorUid,
-                'templates_count' => $templates->count(),
-            ],
-        ]);
+        ], $templateData);
     }
 
     /**
@@ -582,17 +575,14 @@ class WhatsAppTemplateController extends BaseController
         return processExternalApiResponse([
             'result' => 'success',
             'message' => __tr('Template fetched successfully'),
-            'data' => [
-                'template' => [
-                    '_uid' => $template->_uid,
-                    'template_name' => $template->template_name,
-                    'template_id' => $template->template_id,
-                    'language' => $template->language,
-                    'category' => $template->category,
-                    'status' => $template->status,
-                    'template_data' => $template->__data['template'] ?? null,
-                ],
-            ],
+        ], [
+            '_uid' => $template->_uid,
+            'template_name' => $template->template_name,
+            'template_id' => $template->template_id,
+            'language' => $template->language,
+            'category' => $template->category,
+            'status' => $template->status,
+            'template_data' => $template->__data['template'] ?? null,
         ]);
     }
 }
