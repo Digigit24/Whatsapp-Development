@@ -44,9 +44,9 @@
                 <th data-orderable="true" data-name="template_name">{{ __tr('Name') }}</th>
                 <th data-orderable="true" data-name="language">{{ __tr('Language') }}</th>
                 <th data-orderable="true" data-name="category">{{ __tr('Category') }}</th>
-                <th data-template="#templatesStatusColumnTemplate" name="null">{{ __tr('Status') }}</th>
+                <th data-template="#templatesStatusColumnTemplate" data-name="status">{{ __tr('Status') }}</th>
                 <th data-orderable="true" data-order-by="true" data-order-type="desc" data-name="updated_at">{{ __tr('Updated On') }}</th>
-                <th data-template="#templatesActionColumnTemplate" name="null">{{ __tr('Action') }}</th>
+                <th data-template="#templatesActionColumnTemplate" data-name="null">{{ __tr('Action') }}</th>
             </x-lw.datatable>
         </div>
         <script type="text/template" id="templatesStatusColumnTemplate">
