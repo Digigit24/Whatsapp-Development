@@ -20,6 +20,11 @@ class AppApiAuthenticateMiddleware
      */
     public function handle($request, Closure $next)
     {
+        // Allow OPTIONS requests to pass through for CORS preflight
+        if ($request->isMethod('OPTIONS')) {
+            return response()->json('OK', 200);
+        }
+
         config([
             '__tech.auth_info' => [
                 'authorized' => false,

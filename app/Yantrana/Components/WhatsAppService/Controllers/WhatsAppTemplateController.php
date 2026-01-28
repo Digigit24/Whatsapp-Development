@@ -507,4 +507,83 @@ class WhatsAppTemplateController extends BaseController
         // get back with response
         return $this->processResponse($processReaction, [], [], true);
     }
+
+    /**
+     * API: Get all templates for a vendor (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetTemplates($vendorUid)
+    {
+        $templates = $this->whatsAppTemplateEngine->prepareApprovedTemplates();
+
+        if ($templates->success()) {
+            $templateData = $templates->data()['whatsAppTemplates']->map(function ($template) {
+                return [
+                    '_uid' => $template->_uid,
+                    'template_name' => $template->template_name,
+                    'template_id' => $template->template_id,
+                    'language' => $template->language,
+                    'category' => $template->category,
+                    'status' => $template->status,
+                    'template_data' => $template->__data['template'] ?? null,
+                ];
+            });
+
+            return processExternalApiResponse([
+                'result' => 'success',
+                'data' => [
+                    'templates' => $templateData,
+                ],
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => __tr('Failed to fetch templates'),
+        ]);
+    }
+
+    /**
+     * API: Get single template by UID for a vendor (External API)
+     *
+     * @param string $vendorUid
+     * @param string $templateUid
+     * @return json
+     */
+    public function apiGetTemplate($vendorUid, $templateUid)
+    {
+        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+
+        if (__isEmpty($template)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        // Verify template belongs to current vendor
+        if ($template->vendors__id !== getVendorId()) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'data' => [
+                'template' => [
+                    '_uid' => $template->_uid,
+                    'template_name' => $template->template_name,
+                    'template_id' => $template->template_id,
+                    'language' => $template->language,
+                    'category' => $template->category,
+                    'status' => $template->status,
+                    'template_data' => $template->__data['template'] ?? null,
+                ],
+            ],
+        ]);
+    }
 }

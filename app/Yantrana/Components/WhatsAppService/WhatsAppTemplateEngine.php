@@ -36,7 +36,7 @@ class WhatsAppTemplateEngine extends BaseEngine implements WhatsAppTemplateEngin
     /**
      * @var  WhatsAppTemplateRepository $whatsAppTemplateRepository - WhatsAppTemplate Repository
      */
-    protected $whatsAppTemplateRepository;
+    public $whatsAppTemplateRepository;
 
     /**
      * @var WhatsAppApiService - WhatsApp API Service

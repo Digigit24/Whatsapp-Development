@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Yantrana\Components\Auth\Controllers\ApiUserController;
 use App\Yantrana\Components\Contact\Controllers\ContactController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceController;
+use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppTemplateController;
 use App\Yantrana\Components\Media\Controllers\MediaController;
 use App\Yantrana\Components\User\Controllers\UserController;
 
@@ -30,7 +31,7 @@ Route::middleware('auth:api')->get('/user', function (Request $request) {
 
 // external apis
 // base url
-Route::any('/', function () {
+Route::get('/', function () {
     return 'api endpoint';
 })->name('api.base_url');
 
@@ -72,6 +73,18 @@ Route::group([
         ContactController::class,
         'apiAssignTeamMemberToContact',
     ])->name('api.vendor.contact.assign_member.update.process');
+
+    // Template APIs
+    // Get all templates for vendor
+    Route::get('/templates', [
+        WhatsAppTemplateController::class,
+        'apiGetTemplates',
+    ])->name('api.vendor.templates.read');
+    // Get single template by UID
+    Route::get('/templates/{templateUid}', [
+        WhatsAppTemplateController::class,
+        'apiGetTemplate',
+    ])->name('api.vendor.template.read');
 });
 
 // Mobile app apis

@@ -17,6 +17,11 @@ class ApiVendorAccessCheckpost
      */
     public function handle($request, Closure $next)
     {
+        // Allow OPTIONS requests to pass through for CORS preflight
+        if ($request->isMethod('OPTIONS')) {
+            return response()->json('OK', 200);
+        }
+
         // behave like ajax request
         $request->headers->set('x-requested-with', 'XMLHttpRequest');
         $request->headers->set('x-external-api-request', true);
