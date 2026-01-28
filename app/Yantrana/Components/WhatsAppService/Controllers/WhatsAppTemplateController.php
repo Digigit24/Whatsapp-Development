@@ -516,19 +516,12 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplates($vendorUid)
     {
-        // Get vendor by UID to get the internal ID
-        $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+        // Use getVendorId() since middleware has already authenticated the vendor admin
+        $vendorId = getVendorId();
 
-        if (__isEmpty($vendor)) {
-            return processExternalApiResponse([
-                'result' => 'failed',
-                'message' => __tr('Vendor not found'),
-            ]);
-        }
-
-        // Query templates directly for the vendor
+        // Query templates directly for the vendor (same as dashboard)
         $templates = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
-            'vendors__id' => $vendor->_id,
+            'vendors__id' => $vendorId,
             'status' => 'APPROVED',
         ])->latest()->get();
 
@@ -562,15 +555,8 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplate($vendorUid, $templateUid)
     {
-        // Get vendor by UID to get the internal ID
-        $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
-
-        if (__isEmpty($vendor)) {
-            return processExternalApiResponse([
-                'result' => 'failed',
-                'message' => __tr('Vendor not found'),
-            ]);
-        }
+        // Use getVendorId() since middleware has already authenticated the vendor admin
+        $vendorId = getVendorId();
 
         $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
 
@@ -582,7 +568,7 @@ class WhatsAppTemplateController extends BaseController
         }
 
         // Verify template belongs to current vendor
-        if ($template->vendors__id !== $vendor->_id) {
+        if ($template->vendors__id !== $vendorId) {
             return processExternalApiResponse([
                 'result' => 'failed',
                 'message' => __tr('Template not found'),
