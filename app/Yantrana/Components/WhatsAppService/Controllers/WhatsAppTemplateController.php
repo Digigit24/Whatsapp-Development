@@ -516,11 +516,19 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplates($vendorUid)
     {
-        $vendorId = getVendorId();
+        // Get vendor by UID to get the internal ID
+        $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+
+        if (__isEmpty($vendor)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Vendor not found'),
+            ]);
+        }
 
         // Query templates directly for the vendor
         $templates = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
-            'vendors__id' => $vendorId,
+            'vendors__id' => $vendor->_id,
             'status' => 'APPROVED',
         ])->latest()->get();
 
@@ -554,6 +562,16 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplate($vendorUid, $templateUid)
     {
+        // Get vendor by UID to get the internal ID
+        $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+
+        if (__isEmpty($vendor)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Vendor not found'),
+            ]);
+        }
+
         $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
 
         if (__isEmpty($template)) {
@@ -564,7 +582,7 @@ class WhatsAppTemplateController extends BaseController
         }
 
         // Verify template belongs to current vendor
-        if ($template->vendors__id !== getVendorId()) {
+        if ($template->vendors__id !== $vendor->_id) {
             return processExternalApiResponse([
                 'result' => 'failed',
                 'message' => __tr('Template not found'),
