@@ -537,7 +537,8 @@ class WhatsAppTemplateController extends BaseController
             ];
         });
 
-        return processExternalApiResponse([
+        // DEBUG: Return with debug info to diagnose the issue
+        return response()->json([
             'result' => 'success',
             'message' => __tr('Templates fetched successfully'),
             'data' => $templateData,
