@@ -540,8 +540,11 @@ class WhatsAppTemplateController extends BaseController
         return processExternalApiResponse([
             'result' => 'success',
             'message' => __tr('Templates fetched successfully'),
-            'data' => [
-                'templates' => $templateData,
+            'data' => $templateData,
+            '_debug' => [
+                'vendor_id_used' => $vendorId,
+                'vendor_uid' => $vendorUid,
+                'templates_count' => $templates->count(),
             ],
         ]);
     }
