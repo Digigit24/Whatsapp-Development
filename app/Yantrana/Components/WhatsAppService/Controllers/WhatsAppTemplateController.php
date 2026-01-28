@@ -516,10 +516,10 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplates($vendorUid)
     {
-        // Use getVendorId() since middleware has already authenticated the vendor admin
-        $vendorId = getVendorId();
+        // Get vendor ID from request (set by ApiVendorAccessCheckpost middleware)
+        $vendorId = request()->get('_vendor_id');
 
-        // Query templates directly for the vendor (same as dashboard)
+        // Query templates directly for the vendor
         $templates = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
             'vendors__id' => $vendorId,
             'status' => 'APPROVED',
@@ -555,8 +555,8 @@ class WhatsAppTemplateController extends BaseController
      */
     public function apiGetTemplate($vendorUid, $templateUid)
     {
-        // Use getVendorId() since middleware has already authenticated the vendor admin
-        $vendorId = getVendorId();
+        // Get vendor ID from request (set by ApiVendorAccessCheckpost middleware)
+        $vendorId = request()->get('_vendor_id');
 
         $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
 

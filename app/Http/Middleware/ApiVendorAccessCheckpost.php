@@ -67,6 +67,9 @@ class ApiVendorAccessCheckpost
             ]);
         }
         Auth::loginUsingId($vendorAdmin->_id);
+        // Store vendor ID in request for API controllers to use
+        // (getVendorId() may not work reliably in stateless API context)
+        $request->merge(['_vendor_id' => $vendor->_id]);
         return $next($request);
     }
 }
