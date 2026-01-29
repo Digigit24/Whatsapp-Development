@@ -240,4 +240,250 @@ class CampaignController extends BaseController
         validateVendorAccess('manage_campaigns');
         return $this->campaignEngine->processGenerateExpiredLogCampaignReport($campaignUid);
     }
+
+    /**
+     * API: Get all campaigns for vendor (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetCampaigns($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $status = request()->get('status', 'active');
+
+        $campaigns = \App\Yantrana\Components\Campaign\Models\CampaignModel::where('vendors__id', $vendorId)
+            ->when($status === 'active', fn($q) => $q->where('status', '!=', 5))
+            ->when($status === 'archived', fn($q) => $q->where('status', 5))
+            ->latest()
+            ->get();
+
+        $campaignData = $campaigns->map(function ($campaign) {
+            return [
+                '_uid' => $campaign->_uid,
+                'title' => $campaign->title,
+                'template_name' => $campaign->template_name,
+                'template_language' => $campaign->template_language,
+                'status' => $campaign->status,
+                'scheduled_at' => $campaign->scheduled_at,
+                'created_at' => $campaign->created_at,
+                'total_contacts' => $campaign->__data['total_contacts'] ?? 0,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Campaigns fetched successfully'),
+        ], $campaignData);
+    }
+
+    /**
+     * API: Get single campaign (External API)
+     *
+     * @param string $vendorUid
+     * @param string $campaignUid
+     * @return json
+     */
+    public function apiGetCampaign($vendorUid, $campaignUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::where([
+            '_uid' => $campaignUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Campaign not found'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Campaign fetched successfully'),
+        ], [
+            '_uid' => $campaign->_uid,
+            'title' => $campaign->title,
+            'template_name' => $campaign->template_name,
+            'template_language' => $campaign->template_language,
+            'status' => $campaign->status,
+            'scheduled_at' => $campaign->scheduled_at,
+            'created_at' => $campaign->created_at,
+            'timezone' => $campaign->timezone,
+            'total_contacts' => $campaign->__data['total_contacts'] ?? 0,
+            '__data' => $campaign->__data,
+        ]);
+    }
+
+    /**
+     * API: Get campaign status/stats (External API)
+     *
+     * @param string $vendorUid
+     * @param string $campaignUid
+     * @return json
+     */
+    public function apiGetCampaignStatus($vendorUid, $campaignUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::where([
+            '_uid' => $campaignUid,
+            'vendors__id' => $vendorId,
+        ])->withCount([
+            'queueMessages as queue_pending_count' => fn($q) => $q->where('status', 1),
+            'queueMessages as queue_failed_count' => fn($q) => $q->where('status', 2),
+            'queueMessages as queue_processing_count' => fn($q) => $q->where('status', 3),
+            'queueMessages as queue_expired_count' => fn($q) => $q->where('status', 5),
+            'messageLog as executed_count',
+        ])->first();
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Campaign not found'),
+            ]);
+        }
+
+        $totalContacts = $campaign->__data['total_contacts'] ?? 0;
+        $statusText = 'upcoming';
+        if (\Carbon\Carbon::parse($campaign->scheduled_at) < now()) {
+            if ($campaign->queue_pending_count || $campaign->queue_processing_count) {
+                $statusText = 'processing';
+            } else {
+                $statusText = 'executed';
+            }
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Campaign status fetched successfully'),
+        ], [
+            '_uid' => $campaign->_uid,
+            'title' => $campaign->title,
+            'status_text' => $statusText,
+            'total_contacts' => $totalContacts,
+            'queue_pending' => $campaign->queue_pending_count,
+            'queue_failed' => $campaign->queue_failed_count,
+            'queue_processing' => $campaign->queue_processing_count,
+            'queue_expired' => $campaign->queue_expired_count,
+            'executed' => $campaign->executed_count,
+            'scheduled_at' => $campaign->scheduled_at,
+        ]);
+    }
+
+    /**
+     * API: Delete campaign (External API)
+     *
+     * @param string $vendorUid
+     * @param string $campaignUid
+     * @return json
+     */
+    public function apiDeleteCampaign($vendorUid, $campaignUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::where([
+            '_uid' => $campaignUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Campaign not found'),
+            ]);
+        }
+
+        $processResponse = $this->campaignEngine->processCampaignDelete($campaignUid);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Archive campaign (External API)
+     *
+     * @param string $vendorUid
+     * @param string $campaignUid
+     * @return json
+     */
+    public function apiArchiveCampaign($vendorUid, $campaignUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::where([
+            '_uid' => $campaignUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Campaign not found'),
+            ]);
+        }
+
+        $processResponse = $this->campaignEngine->processCampaignArchive($campaignUid);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Unarchive campaign (External API)
+     *
+     * @param string $vendorUid
+     * @param string $campaignUid
+     * @return json
+     */
+    public function apiUnarchiveCampaign($vendorUid, $campaignUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::where([
+            '_uid' => $campaignUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Campaign not found'),
+            ]);
+        }
+
+        $processResponse = $this->campaignEngine->processCampaignUnarchive($campaignUid);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
 }

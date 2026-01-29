@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 use App\Yantrana\Components\Auth\Controllers\ApiUserController;
 use App\Yantrana\Components\Contact\Controllers\ContactController;
+use App\Yantrana\Components\Campaign\Controllers\CampaignController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppTemplateController;
 use App\Yantrana\Components\Media\Controllers\MediaController;
@@ -105,6 +106,65 @@ Route::group([
         WhatsAppTemplateController::class,
         'apiSyncTemplates',
     ])->name('api.vendor.templates.sync');
+
+    // Campaign APIs
+    // Get all campaigns
+    Route::get('/campaigns', [
+        CampaignController::class,
+        'apiGetCampaigns',
+    ])->name('api.vendor.campaigns.read');
+    // Get single campaign
+    Route::get('/campaigns/{campaignUid}', [
+        CampaignController::class,
+        'apiGetCampaign',
+    ])->name('api.vendor.campaign.read');
+    // Get campaign status/stats
+    Route::get('/campaigns/{campaignUid}/status', [
+        CampaignController::class,
+        'apiGetCampaignStatus',
+    ])->name('api.vendor.campaign.status');
+    // Delete campaign
+    Route::delete('/campaigns/{campaignUid}', [
+        CampaignController::class,
+        'apiDeleteCampaign',
+    ])->name('api.vendor.campaign.delete');
+    // Archive campaign
+    Route::post('/campaigns/{campaignUid}/archive', [
+        CampaignController::class,
+        'apiArchiveCampaign',
+    ])->name('api.vendor.campaign.archive');
+    // Unarchive campaign
+    Route::post('/campaigns/{campaignUid}/unarchive', [
+        CampaignController::class,
+        'apiUnarchiveCampaign',
+    ])->name('api.vendor.campaign.unarchive');
+
+    // Contact APIs
+    // Get all contacts
+    Route::get('/contacts', [
+        ContactController::class,
+        'apiGetContacts',
+    ])->name('api.vendor.contacts.read');
+    // Get single contact
+    Route::get('/contacts/{contactUid}', [
+        ContactController::class,
+        'apiGetContact',
+    ])->name('api.vendor.contact.read');
+    // Delete contact
+    Route::delete('/contacts/{contactUid}', [
+        ContactController::class,
+        'apiDeleteContact',
+    ])->name('api.vendor.contact.delete');
+    // Get all labels
+    Route::get('/labels', [
+        ContactController::class,
+        'apiGetLabels',
+    ])->name('api.vendor.labels.read');
+    // Get all contact groups
+    Route::get('/contact-groups', [
+        ContactController::class,
+        'apiGetContactGroups',
+    ])->name('api.vendor.contact_groups.read');
 });
 
 // Mobile app apis

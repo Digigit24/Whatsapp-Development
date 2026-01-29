@@ -683,4 +683,190 @@ class ContactController extends BaseController
         // get back to controller with engine response
         return $this->processResponse($processReaction, [], [], true);
     }
+
+    /**
+     * API: Get all contacts for vendor (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetContacts($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $limit = request()->get('limit', 100);
+        $page = request()->get('page', 1);
+        $search = request()->get('search');
+
+        $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->when($search, function ($q) use ($search) {
+                $q->where(function ($sq) use ($search) {
+                    $sq->where('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%")
+                        ->orWhere('wa_id', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->latest();
+
+        $total = $query->count();
+        $contacts = $query->skip(($page - 1) * $limit)->take($limit)->get();
+
+        $contactData = $contacts->map(function ($contact) {
+            return [
+                '_uid' => $contact->_uid,
+                'first_name' => $contact->first_name,
+                'last_name' => $contact->last_name,
+                'phone_number' => $contact->wa_id,
+                'email' => $contact->email,
+                'language_code' => $contact->language_code,
+                'created_at' => $contact->created_at,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contacts fetched successfully'),
+        ], [
+            'contacts' => $contactData,
+            'total' => $total,
+            'page' => (int) $page,
+            'limit' => (int) $limit,
+            'total_pages' => ceil($total / $limit),
+        ]);
+    }
+
+    /**
+     * API: Get single contact (External API)
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiGetContact($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->with(['country', 'groups', 'labels'])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contact fetched successfully'),
+        ], [
+            '_uid' => $contact->_uid,
+            'first_name' => $contact->first_name,
+            'last_name' => $contact->last_name,
+            'phone_number' => $contact->wa_id,
+            'email' => $contact->email,
+            'language_code' => $contact->language_code,
+            'country' => $contact->country?->name,
+            'created_at' => $contact->created_at,
+            'groups' => $contact->groups->pluck('title', '_uid'),
+            'labels' => $contact->labels->pluck('title', '_uid'),
+            '__data' => $contact->__data,
+        ]);
+    }
+
+    /**
+     * API: Delete contact (External API)
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiDeleteContact($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $processResponse = $this->contactEngine->processContactDelete($contactUid);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Get all labels (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetLabels($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $labels = \App\Yantrana\Components\Contact\Models\LabelModel::where('vendors__id', $vendorId)->get();
+
+        $labelData = $labels->map(function ($label) {
+            return [
+                '_uid' => $label->_uid,
+                'title' => $label->title,
+                'text_color' => $label->text_color,
+                'bg_color' => $label->bg_color,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Labels fetched successfully'),
+        ], $labelData);
+    }
+
+    /**
+     * API: Get all contact groups (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetContactGroups($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $groups = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where('vendors__id', $vendorId)
+            ->withCount('contacts')
+            ->get();
+
+        $groupData = $groups->map(function ($group) {
+            return [
+                '_uid' => $group->_uid,
+                'title' => $group->title,
+                'description' => $group->description,
+                'contacts_count' => $group->contacts_count,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contact groups fetched successfully'),
+        ], $groupData);
+    }
 }
