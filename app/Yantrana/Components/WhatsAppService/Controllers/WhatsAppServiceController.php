@@ -1020,11 +1020,9 @@ class WhatsAppServiceController extends BaseController
         $limit = request()->get('limit', 20);
 
         $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
-            ->whereNotNull('last_message_at')
+            ->has('lastMessage')
             ->with(['lastMessage', 'labels', 'assignedUser'])
-            ->withCount(['unreadMessages' => function($q) {
-                $q->where('is_incoming_message', 1)->where('is_read', 0);
-            }]);
+            ->withCount(['unreadMessages']);
 
         if ($search) {
             $query->where(function($q) use ($search) {
@@ -1038,8 +1036,15 @@ class WhatsAppServiceController extends BaseController
             $query->where('assigned_users__id', getUserID());
         }
 
-        $contacts = $query->orderByDesc('last_message_at')
-            ->paginate($limit, ['*'], 'page', $page);
+        // Order by latest message using subquery
+        $query->orderByDesc(
+            \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::select('messaged_at')
+                ->whereColumn('contacts__id', 'contacts._id')
+                ->orderByDesc('messaged_at')
+                ->limit(1)
+        );
+
+        $contacts = $query->paginate($limit, ['*'], 'page', $page);
 
         $contactData = $contacts->map(function ($contact) {
             return [
@@ -1048,21 +1053,21 @@ class WhatsAppServiceController extends BaseController
                 'last_name' => $contact->last_name,
                 'full_name' => trim($contact->first_name . ' ' . $contact->last_name),
                 'wa_id' => $contact->wa_id,
-                'country_code' => $contact->country_code,
-                'profile_picture' => $contact->profile_picture,
-                'last_message_at' => $contact->last_message_at,
+                'country_code' => $contact->country_code ?? null,
+                'profile_picture' => $contact->profile_picture ?? null,
+                'last_message_at' => $contact->lastMessage?->messaged_at,
                 'unread_count' => $contact->unread_messages_count,
                 'last_message' => $contact->lastMessage ? [
                     'message' => $contact->lastMessage->message,
                     'is_incoming' => $contact->lastMessage->is_incoming_message,
                     'messaged_at' => $contact->lastMessage->messaged_at,
                 ] : null,
-                'labels' => $contact->labels->map(fn($l) => [
+                'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
                     '_uid' => $l->_uid,
                     'title' => $l->title,
                     'bg_color' => $l->bg_color,
                     'text_color' => $l->text_color,
-                ]),
+                ]) : [],
                 'assigned_user' => $contact->assignedUser ? [
                     '_uid' => $contact->assignedUser->_uid,
                     'name' => $contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name,
@@ -1386,17 +1391,18 @@ class WhatsAppServiceController extends BaseController
     {
         $vendorId = request()->get('_vendor_id');
 
-        $unreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereHas('contact', function($q) use ($vendorId) {
-            $q->where('vendors__id', $vendorId);
-        })->where([
-            'is_incoming_message' => 1,
-            'is_read' => 0,
-        ])->count();
+        // Get contact IDs for this vendor
+        $contactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->pluck('_id');
+
+        $unreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $contactIds)
+            ->where([
+                'is_incoming_message' => 1,
+                'is_read' => 0,
+            ])->count();
 
         $unreadContactsCount = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
-            ->whereHas('unreadMessages', function($q) {
-                $q->where('is_incoming_message', 1)->where('is_read', 0);
-            })->count();
+            ->whereHas('unreadMessages')->count();
 
         return processExternalApiResponse([
             'result' => 'success',
@@ -1587,9 +1593,11 @@ class WhatsAppServiceController extends BaseController
         $page = request()->get('page', 1);
         $limit = request()->get('limit', 50);
 
-        $query = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereHas('contact', function($q) use ($vendorId) {
-            $q->where('vendors__id', $vendorId);
-        })->with('contact');
+        // Get contact IDs for this vendor
+        $contactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->pluck('_id');
+
+        $query = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $contactIds);
 
         if ($type !== null) {
             $query->where('is_incoming_message', $type);
@@ -1606,7 +1614,14 @@ class WhatsAppServiceController extends BaseController
         $messages = $query->orderByDesc('messaged_at')
             ->paginate($limit, ['*'], 'page', $page);
 
-        $messageData = $messages->map(function ($msg) {
+        // Load contacts for the messages
+        $messageContactIds = $messages->pluck('contacts__id')->unique();
+        $contacts = \App\Yantrana\Components\Contact\Models\ContactModel::whereIn('_id', $messageContactIds)
+            ->get()
+            ->keyBy('_id');
+
+        $messageData = $messages->map(function ($msg) use ($contacts) {
+            $contact = $contacts->get($msg->contacts__id);
             return [
                 '_uid' => $msg->_uid,
                 'wamid' => $msg->wamid,
@@ -1614,10 +1629,10 @@ class WhatsAppServiceController extends BaseController
                 'is_incoming_message' => (bool) $msg->is_incoming_message,
                 'status' => $msg->status,
                 'messaged_at' => $msg->messaged_at,
-                'contact' => $msg->contact ? [
-                    '_uid' => $msg->contact->_uid,
-                    'full_name' => trim($msg->contact->first_name . ' ' . $msg->contact->last_name),
-                    'wa_id' => $msg->contact->wa_id,
+                'contact' => $contact ? [
+                    '_uid' => $contact->_uid,
+                    'full_name' => trim($contact->first_name . ' ' . $contact->last_name),
+                    'wa_id' => $contact->wa_id,
                 ] : null,
             ];
         });
@@ -1648,11 +1663,12 @@ class WhatsAppServiceController extends BaseController
     {
         $vendorId = request()->get('_vendor_id');
 
+        // Get contact IDs for this vendor
+        $contactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->pluck('_id');
+
         $message = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('_uid', $messageUid)
-            ->whereHas('contact', function($q) use ($vendorId) {
-                $q->where('vendors__id', $vendorId);
-            })
-            ->with('contact')
+            ->whereIn('contacts__id', $contactIds)
             ->first();
 
         if (__isEmpty($message)) {
@@ -1661,6 +1677,9 @@ class WhatsAppServiceController extends BaseController
                 'message' => __tr('Message not found'),
             ]);
         }
+
+        // Load contact
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where('_id', $message->contacts__id)->first();
 
         return processExternalApiResponse([
             'result' => 'success',
@@ -1673,10 +1692,10 @@ class WhatsAppServiceController extends BaseController
             'status' => $message->status,
             'messaged_at' => $message->messaged_at,
             '__data' => $message->__data,
-            'contact' => $message->contact ? [
-                '_uid' => $message->contact->_uid,
-                'full_name' => trim($message->contact->first_name . ' ' . $message->contact->last_name),
-                'wa_id' => $message->contact->wa_id,
+            'contact' => $contact ? [
+                '_uid' => $contact->_uid,
+                'full_name' => trim($contact->first_name . ' ' . $contact->last_name),
+                'wa_id' => $contact->wa_id,
             ] : null,
         ]);
     }
