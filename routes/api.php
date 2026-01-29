@@ -85,6 +85,26 @@ Route::group([
         WhatsAppTemplateController::class,
         'apiGetTemplate',
     ])->name('api.vendor.template.read');
+    // Create new template
+    Route::post('/templates', [
+        WhatsAppTemplateController::class,
+        'apiCreateTemplate',
+    ])->name('api.vendor.template.create');
+    // Update template
+    Route::put('/templates/{templateUid}', [
+        WhatsAppTemplateController::class,
+        'apiUpdateTemplate',
+    ])->name('api.vendor.template.update');
+    // Delete template
+    Route::delete('/templates/{templateUid}', [
+        WhatsAppTemplateController::class,
+        'apiDeleteTemplate',
+    ])->name('api.vendor.template.delete');
+    // Sync templates from Meta
+    Route::post('/templates/sync', [
+        WhatsAppTemplateController::class,
+        'apiSyncTemplates',
+    ])->name('api.vendor.templates.sync');
 });
 
 // Mobile app apis

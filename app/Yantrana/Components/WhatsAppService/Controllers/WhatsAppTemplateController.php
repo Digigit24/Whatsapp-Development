@@ -585,4 +585,233 @@ class WhatsAppTemplateController extends BaseController
             'template_data' => $template->__data['template'] ?? null,
         ]);
     }
+
+    /**
+     * API: Create new template (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiCreateTemplate($vendorUid)
+    {
+        $request = request();
+
+        // Validate required fields
+        $validations = [
+            'template_name' => ['required', 'max:512', 'alpha_dash'],
+            'language_code' => ['required', 'max:15', 'alpha_dash'],
+            'category' => ['required', Rule::in(['MARKETING', 'UTILITY', 'AUTHENTICATION'])],
+            'template_type' => ['required', Rule::in(['header', 'carousel'])],
+        ];
+
+        // Header type validations
+        if ($request->template_type == 'header') {
+            $validations['template_body'] = ['required', 'max:1024'];
+            $validations['template_footer'] = ['max:60', 'nullable'];
+
+            if ($request->media_header_type) {
+                if (!in_array($request->media_header_type, ['text', 'location'])) {
+                    $validations['uploaded_media_file_name'] = ['required'];
+                } elseif ($request->media_header_type == 'text') {
+                    $validations['header_text_body'] = ['required', 'max:60'];
+                }
+            }
+
+            // Button validations
+            if (!empty($request->message_buttons)) {
+                foreach ($request->message_buttons as $key => $button) {
+                    if (in_array($button['type'], ['QUICK_REPLY', 'PHONE_NUMBER', 'URL_BUTTON', 'VOICE_CALL', 'DYNAMIC_URL_BUTTON'])) {
+                        $validations["message_buttons.$key.text"] = ['required', 'max:25'];
+                        if (in_array($button['type'], ['URL_BUTTON', 'DYNAMIC_URL_BUTTON'])) {
+                            $validations["message_buttons.$key.url"] = ['required', 'max:2000', 'url'];
+                        }
+                    }
+                    if (in_array($button['type'], ['COPY_CODE', 'DYNAMIC_URL_BUTTON'])) {
+                        $validations["message_buttons.$key.example"] = ['required', 'alpha_dash'];
+                    }
+                    if ($button['type'] == 'PHONE_NUMBER') {
+                        $validations["message_buttons.$key.phone_number"] = ['required', 'numeric'];
+                    }
+                }
+            }
+        } elseif ($request->template_type == 'carousel') {
+            $validations['carousel_template_body'] = 'required';
+            $validations['carousel_templates'] = 'required|array|min:2';
+            $validations['carousel_templates.*.header_type'] = ['required', Rule::in(['image', 'video'])];
+            $validations['carousel_templates.*.uploaded_media_file_name'] = 'required';
+            $validations['carousel_templates.*.carousel_card_body'] = 'required';
+            $validations['carousel_templates.*.message_buttons'] = 'required|array|min:1|max:2';
+        }
+
+        try {
+            $request->validate($validations);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Validation failed'),
+            ], ['errors' => $e->errors()]);
+        }
+
+        $processResponse = $this->whatsAppTemplateEngine->createOrUpdateTemplate($request);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ], $processResponse->data());
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Update template (External API)
+     *
+     * @param string $vendorUid
+     * @param string $templateUid
+     * @return json
+     */
+    public function apiUpdateTemplate($vendorUid, $templateUid)
+    {
+        $request = request();
+        $vendorId = request()->get('_vendor_id');
+
+        // Verify template belongs to vendor
+        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+        if (__isEmpty($template) || $template->vendors__id !== $vendorId) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        // Merge template_uid into request for the engine
+        $request->merge(['template_uid' => $templateUid]);
+
+        // Validate required fields
+        $validations = [
+            'template_type' => ['required', Rule::in(['header', 'carousel'])],
+        ];
+
+        if ($request->template_type == 'header') {
+            $validations['template_body'] = ['required', 'max:1024'];
+            $validations['template_footer'] = ['max:60', 'nullable'];
+
+            if ($request->media_header_type) {
+                if (!in_array($request->media_header_type, ['text', 'location'])) {
+                    $validations['uploaded_media_file_name'] = ['required'];
+                } elseif ($request->media_header_type == 'text') {
+                    $validations['header_text_body'] = ['required', 'max:60'];
+                }
+            }
+
+            if (!empty($request->message_buttons)) {
+                foreach ($request->message_buttons as $key => $button) {
+                    if (in_array($button['type'], ['QUICK_REPLY', 'PHONE_NUMBER', 'URL_BUTTON', 'VOICE_CALL', 'DYNAMIC_URL_BUTTON'])) {
+                        $validations["message_buttons.$key.text"] = ['required', 'max:25'];
+                        if (in_array($button['type'], ['URL_BUTTON', 'DYNAMIC_URL_BUTTON'])) {
+                            $validations["message_buttons.$key.url"] = ['required', 'max:2000', 'url'];
+                        }
+                    }
+                    if (in_array($button['type'], ['COPY_CODE', 'DYNAMIC_URL_BUTTON'])) {
+                        $validations["message_buttons.$key.example"] = ['required', 'alpha_dash'];
+                    }
+                    if ($button['type'] == 'PHONE_NUMBER') {
+                        $validations["message_buttons.$key.phone_number"] = ['required', 'numeric'];
+                    }
+                }
+            }
+        } elseif ($request->template_type == 'carousel') {
+            $validations['carousel_template_body'] = 'required';
+            $validations['carousel_templates'] = 'required|array|min:2';
+            $validations['carousel_templates.*.header_type'] = ['required', Rule::in(['image', 'video'])];
+            $validations['carousel_templates.*.uploaded_media_file_name'] = 'required';
+            $validations['carousel_templates.*.carousel_card_body'] = 'required';
+            $validations['carousel_templates.*.message_buttons'] = 'required|array|min:1|max:2';
+        }
+
+        try {
+            $request->validate($validations);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Validation failed'),
+            ], ['errors' => $e->errors()]);
+        }
+
+        $processResponse = $this->whatsAppTemplateEngine->createOrUpdateTemplate($request);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ], $processResponse->data());
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Delete template (External API)
+     *
+     * @param string $vendorUid
+     * @param string $templateUid
+     * @return json
+     */
+    public function apiDeleteTemplate($vendorUid, $templateUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        // Verify template belongs to vendor
+        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+        if (__isEmpty($template) || $template->vendors__id !== $vendorId) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        $processResponse = $this->whatsAppTemplateEngine->processDeleteTemplate($templateUid);
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
+
+    /**
+     * API: Sync templates from Meta (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiSyncTemplates($vendorUid)
+    {
+        $processResponse = $this->whatsAppTemplateEngine->processSyncTemplates();
+
+        if ($processResponse->success()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => $processResponse->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => $processResponse->message(),
+        ]);
+    }
 }

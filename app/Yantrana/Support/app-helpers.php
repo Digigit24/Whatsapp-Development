@@ -121,10 +121,15 @@ if (! function_exists('getVendorId')) {
     /**
      * Get Vendor Id
      *
-     * @return bool
+     * @return int|null
      */
     function getVendorId()
     {
+        // Check for API context first (set by ApiVendorAccessCheckpost middleware)
+        $apiVendorId = request()->get('_vendor_id');
+        if ($apiVendorId) {
+            return $apiVendorId;
+        }
         return getUserAuthInfo('vendor_id');
     }
 }
