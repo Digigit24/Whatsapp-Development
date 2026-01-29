@@ -219,6 +219,80 @@ Route::group([
         ContactController::class,
         'apiRemoveContactsFromGroup',
     ])->name('api.vendor.contact_group.remove_contacts');
+
+    // Chat APIs
+    // Get chat contacts (inbox view)
+    Route::get('/chat/contacts', [
+        WhatsAppServiceController::class,
+        'apiGetChatContacts',
+    ])->name('api.vendor.chat.contacts');
+    // Get unread message count
+    Route::get('/chat/unread-count', [
+        WhatsAppServiceController::class,
+        'apiGetUnreadCount',
+    ])->name('api.vendor.chat.unread_count');
+    // Get team members for assignment
+    Route::get('/chat/team-members', [
+        WhatsAppServiceController::class,
+        'apiGetTeamMembers',
+    ])->name('api.vendor.chat.team_members');
+    // Get messages for contact
+    Route::get('/contacts/{contactUid}/messages', [
+        WhatsAppServiceController::class,
+        'apiGetContactMessages',
+    ])->name('api.vendor.contact.messages.read');
+    // Send text message to contact
+    Route::post('/contacts/{contactUid}/messages', [
+        WhatsAppServiceController::class,
+        'apiSendMessage',
+    ])->name('api.vendor.contact.messages.send');
+    // Send media message to contact
+    Route::post('/contacts/{contactUid}/messages/media', [
+        WhatsAppServiceController::class,
+        'apiSendMediaMessage',
+    ])->name('api.vendor.contact.messages.send_media');
+    // Send template message to contact
+    Route::post('/contacts/{contactUid}/messages/template', [
+        WhatsAppServiceController::class,
+        'apiSendTemplateMessage',
+    ])->name('api.vendor.contact.messages.send_template');
+    // Mark messages as read
+    Route::post('/contacts/{contactUid}/messages/read', [
+        WhatsAppServiceController::class,
+        'apiMarkAsRead',
+    ])->name('api.vendor.contact.messages.mark_read');
+    // Clear chat history
+    Route::delete('/contacts/{contactUid}/messages', [
+        WhatsAppServiceController::class,
+        'apiClearChatHistory',
+    ])->name('api.vendor.contact.messages.clear');
+    // Assign user to contact
+    Route::post('/contacts/{contactUid}/assign-user', [
+        WhatsAppServiceController::class,
+        'apiAssignUser',
+    ])->name('api.vendor.contact.assign_user');
+    // Assign labels to contact
+    Route::post('/contacts/{contactUid}/assign-labels', [
+        WhatsAppServiceController::class,
+        'apiAssignLabels',
+    ])->name('api.vendor.contact.assign_labels');
+    // Update contact notes
+    Route::put('/contacts/{contactUid}/notes', [
+        WhatsAppServiceController::class,
+        'apiUpdateNotes',
+    ])->name('api.vendor.contact.notes.update');
+
+    // Message Log APIs
+    // Get message log
+    Route::get('/message-log', [
+        WhatsAppServiceController::class,
+        'apiGetMessageLog',
+    ])->name('api.vendor.message_log.read');
+    // Get single message
+    Route::get('/messages/{messageUid}', [
+        WhatsAppServiceController::class,
+        'apiGetMessage',
+    ])->name('api.vendor.message.read');
 });
 
 // Mobile app apis

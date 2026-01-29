@@ -1004,6 +1004,748 @@ class WhatsAppServiceController extends BaseController
         // get back to controller with engine response
         return $this->processResponse($processReaction, [], [], true);
     }
-    
 
+    /**
+     * API: Get chat contacts list (inbox view) - External API
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetChatContacts($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $assigned = request()->get('assigned'); // 'to-me' or null
+        $search = request()->get('search');
+        $page = request()->get('page', 1);
+        $limit = request()->get('limit', 20);
+
+        $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->whereNotNull('last_message_at')
+            ->with(['lastMessage', 'labels', 'assignedUser'])
+            ->withCount(['unreadMessages' => function($q) {
+                $q->where('is_incoming_message', 1)->where('is_read', 0);
+            }]);
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('wa_id', 'like', "%{$search}%");
+            });
+        }
+
+        if ($assigned === 'to-me') {
+            $query->where('assigned_users__id', getUserID());
+        }
+
+        $contacts = $query->orderByDesc('last_message_at')
+            ->paginate($limit, ['*'], 'page', $page);
+
+        $contactData = $contacts->map(function ($contact) {
+            return [
+                '_uid' => $contact->_uid,
+                'first_name' => $contact->first_name,
+                'last_name' => $contact->last_name,
+                'full_name' => trim($contact->first_name . ' ' . $contact->last_name),
+                'wa_id' => $contact->wa_id,
+                'country_code' => $contact->country_code,
+                'profile_picture' => $contact->profile_picture,
+                'last_message_at' => $contact->last_message_at,
+                'unread_count' => $contact->unread_messages_count,
+                'last_message' => $contact->lastMessage ? [
+                    'message' => $contact->lastMessage->message,
+                    'is_incoming' => $contact->lastMessage->is_incoming_message,
+                    'messaged_at' => $contact->lastMessage->messaged_at,
+                ] : null,
+                'labels' => $contact->labels->map(fn($l) => [
+                    '_uid' => $l->_uid,
+                    'title' => $l->title,
+                    'bg_color' => $l->bg_color,
+                    'text_color' => $l->text_color,
+                ]),
+                'assigned_user' => $contact->assignedUser ? [
+                    '_uid' => $contact->assignedUser->_uid,
+                    'name' => $contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name,
+                ] : null,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Chat contacts fetched successfully'),
+        ], [
+            'contacts' => $contactData,
+            'pagination' => [
+                'current_page' => $contacts->currentPage(),
+                'last_page' => $contacts->lastPage(),
+                'per_page' => $contacts->perPage(),
+                'total' => $contacts->total(),
+                'has_more' => $contacts->hasMorePages(),
+            ]
+        ]);
+    }
+
+    /**
+     * API: Get messages for a contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiGetContactMessages($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $page = request()->get('page', 1);
+        $limit = request()->get('limit', 50);
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        // Mark messages as read
+        \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
+            'contacts__id' => $contact->_id,
+            'is_incoming_message' => 1,
+            'is_read' => 0,
+        ])->update(['is_read' => 1]);
+
+        $messages = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('contacts__id', $contact->_id)
+            ->orderByDesc('messaged_at')
+            ->paginate($limit, ['*'], 'page', $page);
+
+        $messageData = $messages->map(function ($msg) {
+            return [
+                '_uid' => $msg->_uid,
+                'wamid' => $msg->wamid,
+                'message' => $msg->message,
+                'is_incoming_message' => (bool) $msg->is_incoming_message,
+                'status' => $msg->status,
+                'messaged_at' => $msg->messaged_at,
+                'message_type' => $msg->__data['message_type'] ?? 'text',
+                'media_values' => $msg->__data['media_values'] ?? null,
+                'template_data' => $msg->__data['template_data'] ?? null,
+                'interaction_data' => $msg->__data['interaction_message_data'] ?? null,
+            ];
+        });
+
+        // Check if reply window is open (received message in last 24 hours)
+        $lastIncoming = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
+            'contacts__id' => $contact->_id,
+            'is_incoming_message' => 1,
+        ])->orderByDesc('messaged_at')->first();
+
+        $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Messages fetched successfully'),
+        ], [
+            'contact' => [
+                '_uid' => $contact->_uid,
+                'first_name' => $contact->first_name,
+                'last_name' => $contact->last_name,
+                'wa_id' => $contact->wa_id,
+            ],
+            'is_reply_window_open' => $isReplyWindowOpen,
+            'reply_window_expires_at' => $lastIncoming ? $lastIncoming->messaged_at->addHours(24)->toIso8601String() : null,
+            'messages' => $messageData,
+            'pagination' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total(),
+                'has_more' => $messages->hasMorePages(),
+            ]
+        ]);
+    }
+
+    /**
+     * API: Send text message to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiSendMessage($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $messageBody = request()->get('message');
+        if (empty($messageBody)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Message body is required'),
+            ]);
+        }
+
+        // Prepare request for engine
+        request()->merge([
+            'contact_uid' => $contactUid,
+            'message_body' => $messageBody,
+        ]);
+
+        $processReaction = $this->whatsAppServiceEngine->processSendChatMessage(request());
+
+        if ($processReaction->failed()) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => $processReaction->message(),
+            ]);
+        }
+
+        $processedData = $processReaction->data();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Message sent successfully'),
+        ], [
+            'log_uid' => $processedData['log_message']['_uid'] ?? null,
+            'wamid' => $processedData['log_message']['wamid'] ?? null,
+            'status' => $processedData['log_message']['status'] ?? null,
+            'messaged_at' => $processedData['log_message']['messaged_at'] ?? null,
+        ]);
+    }
+
+    /**
+     * API: Send media message to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiSendMediaMessage($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $mediaType = request()->get('media_type'); // image, video, document, audio
+        $mediaUrl = request()->get('media_url');
+        $caption = request()->get('caption', '');
+
+        if (empty($mediaType) || empty($mediaUrl)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Media type and URL are required'),
+            ]);
+        }
+
+        if (!in_array($mediaType, ['image', 'video', 'document', 'audio'])) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Invalid media type. Use: image, video, document, audio'),
+            ]);
+        }
+
+        // Prepare request for engine
+        request()->merge([
+            'contact_uid' => $contactUid,
+            'phone_number' => $contact->wa_id,
+            'media_type' => $mediaType,
+            'media_url' => $mediaUrl,
+            'caption' => $caption,
+        ]);
+
+        $processReaction = $this->whatsAppServiceEngine->processSendChatMessage(request(), true);
+
+        if ($processReaction->failed()) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => $processReaction->message(),
+            ]);
+        }
+
+        $processedData = $processReaction->data();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Media message sent successfully'),
+        ], [
+            'log_uid' => $processedData['log_message']['_uid'] ?? null,
+            'wamid' => $processedData['log_message']['wamid'] ?? null,
+            'status' => $processedData['log_message']['status'] ?? null,
+        ]);
+    }
+
+    /**
+     * API: Send template message to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiSendTemplateMessage($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $templateUid = request()->get('template_uid');
+        $templateComponents = request()->get('template_components', []);
+
+        if (empty($templateUid)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template UID is required'),
+            ]);
+        }
+
+        $template = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
+            '_uid' => $templateUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($template)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        // Prepare request for engine
+        request()->merge([
+            'phone_number' => $contact->wa_id,
+            'template_name' => $template->template_name,
+            'template_language' => $template->language,
+            'template_uid' => $templateUid,
+        ]);
+
+        // Merge template components if provided
+        if (!empty($templateComponents)) {
+            request()->merge($templateComponents);
+        }
+
+        $processReaction = $this->whatsAppServiceEngine->processSendMessageForContact(request());
+
+        if ($processReaction->failed()) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => $processReaction->message(),
+            ]);
+        }
+
+        $processedData = $processReaction->data();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Template message sent successfully'),
+        ], [
+            'log_uid' => $processedData['log_message']['_uid'] ?? null,
+            'wamid' => $processedData['log_message']['wamid'] ?? null,
+            'status' => $processedData['log_message']['status'] ?? null,
+        ]);
+    }
+
+    /**
+     * API: Get unread message count - External API
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetUnreadCount($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $unreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereHas('contact', function($q) use ($vendorId) {
+            $q->where('vendors__id', $vendorId);
+        })->where([
+            'is_incoming_message' => 1,
+            'is_read' => 0,
+        ])->count();
+
+        $unreadContactsCount = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->whereHas('unreadMessages', function($q) {
+                $q->where('is_incoming_message', 1)->where('is_read', 0);
+            })->count();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Unread count fetched successfully'),
+        ], [
+            'unread_messages' => $unreadCount,
+            'unread_contacts' => $unreadContactsCount,
+        ]);
+    }
+
+    /**
+     * API: Assign team member to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiAssignUser($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $userUid = request()->get('user_uid');
+
+        if ($userUid) {
+            $user = \App\Yantrana\Components\User\Models\User::where('_uid', $userUid)->first();
+            if (__isEmpty($user)) {
+                return processExternalApiResponse([
+                    'result' => 'failed',
+                    'message' => __tr('User not found'),
+                ]);
+            }
+            $contact->assigned_users__id = $user->_id;
+        } else {
+            // Unassign
+            $contact->assigned_users__id = null;
+        }
+
+        $contact->save();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => $userUid ? __tr('User assigned successfully') : __tr('User unassigned successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'assigned_user_uid' => $userUid,
+        ]);
+    }
+
+    /**
+     * API: Assign labels to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiAssignLabels($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $labelUids = request()->get('label_uids', []);
+
+        // Get label IDs
+        $labels = \App\Yantrana\Components\Contact\Models\LabelModel::where('vendors__id', $vendorId)
+            ->whereIn('_uid', $labelUids)
+            ->get();
+
+        // Sync labels
+        $contact->labels()->sync($labels->pluck('_id'));
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Labels assigned successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'assigned_labels' => $labels->map(fn($l) => ['_uid' => $l->_uid, 'title' => $l->title]),
+        ]);
+    }
+
+    /**
+     * API: Update contact notes - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiUpdateNotes($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $notes = request()->get('notes', '');
+
+        $contactData = $contact->__data ?? [];
+        $contactData['notes'] = $notes;
+        $contact->__data = $contactData;
+        $contact->save();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Notes updated successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'notes' => $notes,
+        ]);
+    }
+
+    /**
+     * API: Clear chat history for contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiClearChatHistory($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $deletedCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('contacts__id', $contact->_id)->delete();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Chat history cleared successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'deleted_messages' => $deletedCount,
+        ]);
+    }
+
+    /**
+     * API: Get message log - External API
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetMessageLog($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $type = request()->get('type'); // 1 = incoming, 0 = outgoing, null = all
+        $startDate = request()->get('start_date');
+        $endDate = request()->get('end_date');
+        $page = request()->get('page', 1);
+        $limit = request()->get('limit', 50);
+
+        $query = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereHas('contact', function($q) use ($vendorId) {
+            $q->where('vendors__id', $vendorId);
+        })->with('contact');
+
+        if ($type !== null) {
+            $query->where('is_incoming_message', $type);
+        }
+
+        if ($startDate) {
+            $query->whereDate('messaged_at', '>=', $startDate);
+        }
+
+        if ($endDate) {
+            $query->whereDate('messaged_at', '<=', $endDate);
+        }
+
+        $messages = $query->orderByDesc('messaged_at')
+            ->paginate($limit, ['*'], 'page', $page);
+
+        $messageData = $messages->map(function ($msg) {
+            return [
+                '_uid' => $msg->_uid,
+                'wamid' => $msg->wamid,
+                'message' => $msg->message,
+                'is_incoming_message' => (bool) $msg->is_incoming_message,
+                'status' => $msg->status,
+                'messaged_at' => $msg->messaged_at,
+                'contact' => $msg->contact ? [
+                    '_uid' => $msg->contact->_uid,
+                    'full_name' => trim($msg->contact->first_name . ' ' . $msg->contact->last_name),
+                    'wa_id' => $msg->contact->wa_id,
+                ] : null,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Message log fetched successfully'),
+        ], [
+            'messages' => $messageData,
+            'pagination' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total(),
+                'has_more' => $messages->hasMorePages(),
+            ]
+        ]);
+    }
+
+    /**
+     * API: Get single message details - External API
+     *
+     * @param string $vendorUid
+     * @param string $messageUid
+     * @return json
+     */
+    public function apiGetMessage($vendorUid, $messageUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $message = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('_uid', $messageUid)
+            ->whereHas('contact', function($q) use ($vendorId) {
+                $q->where('vendors__id', $vendorId);
+            })
+            ->with('contact')
+            ->first();
+
+        if (__isEmpty($message)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Message not found'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Message fetched successfully'),
+        ], [
+            '_uid' => $message->_uid,
+            'wamid' => $message->wamid,
+            'message' => $message->message,
+            'is_incoming_message' => (bool) $message->is_incoming_message,
+            'status' => $message->status,
+            'messaged_at' => $message->messaged_at,
+            '__data' => $message->__data,
+            'contact' => $message->contact ? [
+                '_uid' => $message->contact->_uid,
+                'full_name' => trim($message->contact->first_name . ' ' . $message->contact->last_name),
+                'wa_id' => $message->contact->wa_id,
+            ] : null,
+        ]);
+    }
+
+    /**
+     * API: Get team members for assigning - External API
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiGetTeamMembers($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $users = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+            ->where('status', 1)
+            ->get();
+
+        $userData = $users->map(function ($user) {
+            return [
+                '_uid' => $user->_uid,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'full_name' => trim($user->first_name . ' ' . $user->last_name),
+                'email' => $user->email,
+            ];
+        });
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Team members fetched successfully'),
+        ], $userData);
+    }
+
+    /**
+     * API: Mark messages as read for contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiMarkAsRead($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $updatedCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
+            'contacts__id' => $contact->_id,
+            'is_incoming_message' => 1,
+            'is_read' => 0,
+        ])->update(['is_read' => 1]);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Messages marked as read'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'marked_read' => $updatedCount,
+        ]);
+    }
 }
