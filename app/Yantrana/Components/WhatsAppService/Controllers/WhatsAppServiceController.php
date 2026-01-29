@@ -1115,12 +1115,12 @@ class WhatsAppServiceController extends BaseController
             ]);
         }
 
-        // Mark messages as read
+        // Mark messages as read (update status from 'received' to 'read')
         \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
             'contacts__id' => $contact->_id,
             'is_incoming_message' => 1,
-            'is_read' => 0,
-        ])->update(['is_read' => 1]);
+            'status' => 'received',
+        ])->update(['status' => 'read']);
 
         $messages = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('contacts__id', $contact->_id)
             ->orderByDesc('messaged_at')
@@ -1395,10 +1395,11 @@ class WhatsAppServiceController extends BaseController
         $contactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
             ->pluck('_id');
 
+        // Unread = incoming messages with status 'received' (not yet read)
         $unreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $contactIds)
             ->where([
                 'is_incoming_message' => 1,
-                'is_read' => 0,
+                'status' => 'received',
             ])->count();
 
         $unreadContactsCount = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
@@ -1756,8 +1757,8 @@ class WhatsAppServiceController extends BaseController
         $updatedCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
             'contacts__id' => $contact->_id,
             'is_incoming_message' => 1,
-            'is_read' => 0,
-        ])->update(['is_read' => 1]);
+            'status' => 'received',
+        ])->update(['status' => 'read']);
 
         return processExternalApiResponse([
             'result' => 'success',
