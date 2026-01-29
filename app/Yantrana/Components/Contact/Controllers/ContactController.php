@@ -869,4 +869,510 @@ class ContactController extends BaseController
             'message' => __tr('Contact groups fetched successfully'),
         ], $groupData);
     }
+
+    /**
+     * API: Create label (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiCreateLabel($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $title = request()->get('title');
+        $textColor = request()->get('text_color', '#ffffff');
+        $bgColor = request()->get('bg_color', '#6c757d');
+
+        if (empty($title)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Title is required'),
+            ]);
+        }
+
+        $label = \App\Yantrana\Components\Contact\Models\LabelModel::create([
+            'vendors__id' => $vendorId,
+            'title' => $title,
+            'text_color' => $textColor,
+            'bg_color' => $bgColor,
+            'status' => 1,
+        ]);
+
+        if ($label) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => __tr('Label created successfully'),
+            ], [
+                '_uid' => $label->_uid,
+                'title' => $label->title,
+                'text_color' => $label->text_color,
+                'bg_color' => $label->bg_color,
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => __tr('Failed to create label'),
+        ]);
+    }
+
+    /**
+     * API: Update label (External API)
+     *
+     * @param string $vendorUid
+     * @param string $labelUid
+     * @return json
+     */
+    public function apiUpdateLabel($vendorUid, $labelUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $label = \App\Yantrana\Components\Contact\Models\LabelModel::where([
+            '_uid' => $labelUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($label)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Label not found'),
+            ]);
+        }
+
+        $updateData = [];
+        if (request()->has('title')) {
+            $updateData['title'] = request()->get('title');
+        }
+        if (request()->has('text_color')) {
+            $updateData['text_color'] = request()->get('text_color');
+        }
+        if (request()->has('bg_color')) {
+            $updateData['bg_color'] = request()->get('bg_color');
+        }
+
+        if (empty($updateData)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Nothing to update'),
+            ]);
+        }
+
+        $label->update($updateData);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Label updated successfully'),
+        ], [
+            '_uid' => $label->_uid,
+            'title' => $label->title,
+            'text_color' => $label->text_color,
+            'bg_color' => $label->bg_color,
+        ]);
+    }
+
+    /**
+     * API: Delete label (External API)
+     *
+     * @param string $vendorUid
+     * @param string $labelUid
+     * @return json
+     */
+    public function apiDeleteLabel($vendorUid, $labelUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $label = \App\Yantrana\Components\Contact\Models\LabelModel::where([
+            '_uid' => $labelUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($label)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Label not found'),
+            ]);
+        }
+
+        if ($label->delete()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => __tr('Label deleted successfully'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => __tr('Failed to delete label'),
+        ]);
+    }
+
+    /**
+     * API: Create contact group (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiCreateContactGroup($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $title = request()->get('title');
+        $description = request()->get('description', '');
+
+        if (empty($title)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Title is required'),
+            ]);
+        }
+
+        $group = \App\Yantrana\Components\Contact\Models\ContactGroupModel::create([
+            'vendors__id' => $vendorId,
+            'title' => $title,
+            'description' => $description,
+            'status' => 1,
+        ]);
+
+        if ($group) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => __tr('Contact group created successfully'),
+            ], [
+                '_uid' => $group->_uid,
+                'title' => $group->title,
+                'description' => $group->description,
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => __tr('Failed to create contact group'),
+        ]);
+    }
+
+    /**
+     * API: Update contact group (External API)
+     *
+     * @param string $vendorUid
+     * @param string $groupUid
+     * @return json
+     */
+    public function apiUpdateContactGroup($vendorUid, $groupUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $group = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where([
+            '_uid' => $groupUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($group)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact group not found'),
+            ]);
+        }
+
+        $updateData = [];
+        if (request()->has('title')) {
+            $updateData['title'] = request()->get('title');
+        }
+        if (request()->has('description')) {
+            $updateData['description'] = request()->get('description');
+        }
+
+        if (empty($updateData)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Nothing to update'),
+            ]);
+        }
+
+        $group->update($updateData);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contact group updated successfully'),
+        ], [
+            '_uid' => $group->_uid,
+            'title' => $group->title,
+            'description' => $group->description,
+        ]);
+    }
+
+    /**
+     * API: Delete contact group (External API)
+     *
+     * @param string $vendorUid
+     * @param string $groupUid
+     * @return json
+     */
+    public function apiDeleteContactGroup($vendorUid, $groupUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $group = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where([
+            '_uid' => $groupUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($group)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact group not found'),
+            ]);
+        }
+
+        if ($group->delete()) {
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => __tr('Contact group deleted successfully'),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'failed',
+            'message' => __tr('Failed to delete contact group'),
+        ]);
+    }
+
+    /**
+     * API: Add contacts to group (External API)
+     *
+     * @param string $vendorUid
+     * @param string $groupUid
+     * @return json
+     */
+    public function apiAddContactsToGroup($vendorUid, $groupUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $group = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where([
+            '_uid' => $groupUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($group)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact group not found'),
+            ]);
+        }
+
+        $contactUids = request()->get('contact_uids', []);
+        if (empty($contactUids)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact UIDs are required'),
+            ]);
+        }
+
+        $contacts = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->whereIn('_uid', $contactUids)
+            ->get();
+
+        $addedCount = 0;
+        foreach ($contacts as $contact) {
+            $exists = \App\Yantrana\Components\Contact\Models\GroupContactModel::where([
+                'contact_groups__id' => $group->_id,
+                'contacts__id' => $contact->_id,
+            ])->exists();
+
+            if (!$exists) {
+                \App\Yantrana\Components\Contact\Models\GroupContactModel::create([
+                    'contact_groups__id' => $group->_id,
+                    'contacts__id' => $contact->_id,
+                ]);
+                $addedCount++;
+            }
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('__count__ contacts added to group', ['__count__' => $addedCount]),
+        ], [
+            'added_count' => $addedCount,
+        ]);
+    }
+
+    /**
+     * API: Remove contacts from group (External API)
+     *
+     * @param string $vendorUid
+     * @param string $groupUid
+     * @return json
+     */
+    public function apiRemoveContactsFromGroup($vendorUid, $groupUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $group = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where([
+            '_uid' => $groupUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($group)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact group not found'),
+            ]);
+        }
+
+        $contactUids = request()->get('contact_uids', []);
+        if (empty($contactUids)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact UIDs are required'),
+            ]);
+        }
+
+        $contacts = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->whereIn('_uid', $contactUids)
+            ->get();
+
+        $removedCount = \App\Yantrana\Components\Contact\Models\GroupContactModel::where('contact_groups__id', $group->_id)
+            ->whereIn('contacts__id', $contacts->pluck('_id'))
+            ->delete();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('__count__ contacts removed from group', ['__count__' => $removedCount]),
+        ], [
+            'removed_count' => $removedCount,
+        ]);
+    }
+
+    /**
+     * API: Import contacts (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiImportContacts($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contacts = request()->get('contacts', []);
+        if (empty($contacts)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contacts array is required'),
+            ]);
+        }
+
+        $groupUids = request()->get('group_uids', []);
+        $groupIds = [];
+        if (!empty($groupUids)) {
+            $groups = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where('vendors__id', $vendorId)
+                ->whereIn('_uid', $groupUids)
+                ->get();
+            $groupIds = $groups->pluck('_id')->toArray();
+        }
+
+        $createdCount = 0;
+        $updatedCount = 0;
+        $failedCount = 0;
+        $errors = [];
+
+        foreach ($contacts as $index => $contactData) {
+            $phoneNumber = $contactData['phone_number'] ?? null;
+
+            if (empty($phoneNumber)) {
+                $failedCount++;
+                $errors[] = "Row $index: Phone number is required";
+                continue;
+            }
+
+            // Clean phone number
+            $phoneNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
+
+            // Check if contact exists
+            $existingContact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+                'vendors__id' => $vendorId,
+                'wa_id' => $phoneNumber,
+            ])->first();
+
+            if ($existingContact) {
+                // Update existing contact
+                $updateData = [];
+                if (!empty($contactData['first_name'])) {
+                    $updateData['first_name'] = $contactData['first_name'];
+                }
+                if (!empty($contactData['last_name'])) {
+                    $updateData['last_name'] = $contactData['last_name'];
+                }
+                if (!empty($contactData['email'])) {
+                    $updateData['email'] = $contactData['email'];
+                }
+                if (!empty($contactData['language_code'])) {
+                    $updateData['language_code'] = $contactData['language_code'];
+                }
+
+                if (!empty($updateData)) {
+                    $existingContact->update($updateData);
+                }
+
+                // Add to groups if not already
+                if (!empty($groupIds)) {
+                    foreach ($groupIds as $groupId) {
+                        $exists = \App\Yantrana\Components\Contact\Models\GroupContactModel::where([
+                            'contact_groups__id' => $groupId,
+                            'contacts__id' => $existingContact->_id,
+                        ])->exists();
+
+                        if (!$exists) {
+                            \App\Yantrana\Components\Contact\Models\GroupContactModel::create([
+                                'contact_groups__id' => $groupId,
+                                'contacts__id' => $existingContact->_id,
+                            ]);
+                        }
+                    }
+                }
+
+                $updatedCount++;
+            } else {
+                // Create new contact
+                $newContact = \App\Yantrana\Components\Contact\Models\ContactModel::create([
+                    'vendors__id' => $vendorId,
+                    'wa_id' => $phoneNumber,
+                    'first_name' => $contactData['first_name'] ?? '',
+                    'last_name' => $contactData['last_name'] ?? '',
+                    'email' => $contactData['email'] ?? null,
+                    'language_code' => $contactData['language_code'] ?? null,
+                    'countries__id' => $contactData['country_id'] ?? null,
+                ]);
+
+                if ($newContact) {
+                    // Add to groups
+                    if (!empty($groupIds)) {
+                        foreach ($groupIds as $groupId) {
+                            \App\Yantrana\Components\Contact\Models\GroupContactModel::create([
+                                'contact_groups__id' => $groupId,
+                                'contacts__id' => $newContact->_id,
+                            ]);
+                        }
+                    }
+                    $createdCount++;
+                } else {
+                    $failedCount++;
+                    $errors[] = "Row $index: Failed to create contact";
+                }
+            }
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Import completed: __created__ created, __updated__ updated, __failed__ failed', [
+                '__created__' => $createdCount,
+                '__updated__' => $updatedCount,
+                '__failed__' => $failedCount,
+            ]),
+        ], [
+            'created_count' => $createdCount,
+            'updated_count' => $updatedCount,
+            'failed_count' => $failedCount,
+            'errors' => $errors,
+        ]);
+    }
 }

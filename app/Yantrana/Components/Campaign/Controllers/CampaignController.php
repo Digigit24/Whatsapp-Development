@@ -486,4 +486,239 @@ class CampaignController extends BaseController
             'message' => $processResponse->message(),
         ]);
     }
+
+    /**
+     * API: Create/Schedule campaign (External API)
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiCreateCampaign($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        // Validate required fields
+        $title = request()->get('title');
+        $templateUid = request()->get('template_uid');
+        $contactGroup = request()->get('contact_group'); // can be group _id or 'all_contacts'
+        $timezone = request()->get('timezone', 'UTC');
+
+        if (empty($title)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Title is required'),
+            ]);
+        }
+
+        if (empty($templateUid)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template UID is required'),
+            ]);
+        }
+
+        if (empty($contactGroup)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact group is required (use group _id or "all_contacts")'),
+            ]);
+        }
+
+        // Fetch template
+        $template = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppTemplateModel::where([
+            '_uid' => $templateUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($template)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Template not found'),
+            ]);
+        }
+
+        // Validate contact group
+        $groupContactIds = [];
+        $contactGroupData = null;
+        $isAllContacts = ($contactGroup === 'all_contacts');
+
+        if (!$isAllContacts) {
+            // Try to find group by _id first, then by _uid
+            $contactGroupData = \App\Yantrana\Components\Contact\Models\ContactGroupModel::where('vendors__id', $vendorId)
+                ->where(function($q) use ($contactGroup) {
+                    $q->where('_id', $contactGroup)
+                      ->orWhere('_uid', $contactGroup);
+                })->first();
+
+            if (__isEmpty($contactGroupData)) {
+                return processExternalApiResponse([
+                    'result' => 'failed',
+                    'message' => __tr('Contact group not found'),
+                ]);
+            }
+
+            $groupContacts = \App\Yantrana\Components\Contact\Models\GroupContactModel::where('contact_groups__id', $contactGroupData->_id)->get();
+            $groupContactIds = $groupContacts->pluck('contacts__id')->toArray();
+        }
+
+        // Process schedule time
+        $scheduleAt = request()->get('schedule_at');
+        if ($scheduleAt) {
+            try {
+                if (strlen($scheduleAt) == 16) {
+                    $scheduleAt = $scheduleAt . ':00';
+                }
+                $rawTime = \Carbon\Carbon::createFromFormat('Y-m-d\TH:i:s', $scheduleAt, $timezone);
+                $scheduleAt = $rawTime->setTimezone('UTC');
+            } catch (\Throwable $th) {
+                $scheduleAt = now();
+            }
+        } else {
+            $scheduleAt = now();
+        }
+
+        // Process expire time
+        $expireAt = request()->get('expire_at');
+        if ($expireAt) {
+            try {
+                if (strlen($expireAt) == 16) {
+                    $expireAt = $expireAt . ':00';
+                }
+                $rawTime = \Carbon\Carbon::createFromFormat('Y-m-d\TH:i:s', $expireAt, $timezone);
+                $expireAt = $rawTime->setTimezone('UTC')->toDateTimeString();
+            } catch (\Throwable $th) {
+                $expireAt = null;
+            }
+        }
+
+        // Get contact labels if provided
+        $labelIds = request()->get('contact_labels', []);
+        $restrictByTemplateContactLanguage = request()->get('restrict_by_template_language', false);
+
+        // Build contacts query
+        $contactsWhereClause = [
+            'vendors__id' => $vendorId,
+        ];
+
+        $isOnlyForOptedContacts = false;
+        if ($template->category == 'MARKETING') {
+            $contactsWhereClause['whatsapp_opt_out'] = null;
+            $isOnlyForOptedContacts = true;
+        }
+
+        if ($restrictByTemplateContactLanguage) {
+            $contactsWhereClause['language_code'] = $template->language;
+        }
+
+        // Count contacts
+        $contactsQuery = \App\Yantrana\Components\Contact\Models\ContactModel::where($contactsWhereClause);
+
+        if (!$isAllContacts && !empty($groupContactIds)) {
+            $contactsQuery->whereIn('_id', $groupContactIds);
+        }
+
+        if (!empty($labelIds)) {
+            $contactsQuery->whereHas('labels', function($q) use ($labelIds) {
+                $q->whereIn('labels._id', $labelIds);
+            });
+        }
+
+        $totalContacts = $contactsQuery->count();
+
+        if ($totalContacts == 0) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('No contacts found matching criteria'),
+            ]);
+        }
+
+        // Create campaign
+        $campaign = \App\Yantrana\Components\Campaign\Models\CampaignModel::create([
+            'status' => 1,
+            'vendors__id' => $vendorId,
+            'users__id' => 1, // API user
+            'title' => $title,
+            'template_name' => $template->template_name,
+            'template_language' => $template->language,
+            'whatsapp_templates__id' => $template->_id,
+            'scheduled_at' => $scheduleAt,
+            'timezone' => $timezone,
+            '__data' => [
+                'expiry_at' => $expireAt,
+                'total_contacts' => $totalContacts,
+                'is_for_template_language_only' => $restrictByTemplateContactLanguage,
+                'is_for_opted_only_contacts' => $isOnlyForOptedContacts,
+                'is_all_contacts' => $isAllContacts,
+                'selected_groups' => $isAllContacts ? [] : [
+                    $contactGroupData->_uid => [
+                        '_id' => $contactGroupData->_id,
+                        '_uid' => $contactGroupData->_uid,
+                        'title' => $contactGroupData->title,
+                        'description' => $contactGroupData->description ?? '',
+                        'total_group_contacts' => $totalContacts,
+                    ]
+                ],
+                'template_components' => request()->get('template_components', []),
+            ],
+        ]);
+
+        if (__isEmpty($campaign)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Failed to create campaign'),
+            ]);
+        }
+
+        // Queue messages for all contacts
+        $contacts = $contactsQuery->get();
+        $queueData = [];
+
+        foreach ($contacts as $contact) {
+            if (!$contact->wa_id) {
+                continue;
+            }
+
+            $queueData[] = [
+                'vendors__id' => $vendorId,
+                'status' => 1, // queue
+                'scheduled_at' => $scheduleAt,
+                'phone_with_country_code' => $contact->wa_id,
+                'campaigns__id' => $campaign->_id,
+                'contacts__id' => $contact->_id,
+                '__data' => [
+                    'expiry_at' => $expireAt,
+                    'contact_data' => [
+                        '_id' => $contact->_id,
+                        '_uid' => $contact->_uid,
+                        'first_name' => $contact->first_name,
+                        'last_name' => $contact->last_name,
+                        'countries__id' => $contact->countries__id,
+                    ],
+                    'campaign_data' => [
+                        'template_name' => $template->template_name,
+                        'template_language' => $template->language,
+                        'template_components' => request()->get('template_components', []),
+                    ]
+                ]
+            ];
+        }
+
+        // Insert queue in chunks
+        if (!empty($queueData)) {
+            foreach (array_chunk($queueData, 500) as $chunk) {
+                \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageQueueModel::insert($chunk);
+            }
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Campaign created successfully'),
+        ], [
+            '_uid' => $campaign->_uid,
+            'title' => $campaign->title,
+            'template_name' => $campaign->template_name,
+            'scheduled_at' => $campaign->scheduled_at,
+            'total_contacts' => $totalContacts,
+        ]);
+    }
 }

@@ -113,6 +113,11 @@ Route::group([
         CampaignController::class,
         'apiGetCampaigns',
     ])->name('api.vendor.campaigns.read');
+    // Create/Schedule campaign
+    Route::post('/campaigns', [
+        CampaignController::class,
+        'apiCreateCampaign',
+    ])->name('api.vendor.campaign.create');
     // Get single campaign
     Route::get('/campaigns/{campaignUid}', [
         CampaignController::class,
@@ -145,6 +150,11 @@ Route::group([
         ContactController::class,
         'apiGetContacts',
     ])->name('api.vendor.contacts.read');
+    // Import contacts
+    Route::post('/contacts/import', [
+        ContactController::class,
+        'apiImportContacts',
+    ])->name('api.vendor.contacts.import');
     // Get single contact
     Route::get('/contacts/{contactUid}', [
         ContactController::class,
@@ -155,16 +165,60 @@ Route::group([
         ContactController::class,
         'apiDeleteContact',
     ])->name('api.vendor.contact.delete');
+
+    // Label APIs
     // Get all labels
     Route::get('/labels', [
         ContactController::class,
         'apiGetLabels',
     ])->name('api.vendor.labels.read');
+    // Create label
+    Route::post('/labels', [
+        ContactController::class,
+        'apiCreateLabel',
+    ])->name('api.vendor.label.create');
+    // Update label
+    Route::put('/labels/{labelUid}', [
+        ContactController::class,
+        'apiUpdateLabel',
+    ])->name('api.vendor.label.update');
+    // Delete label
+    Route::delete('/labels/{labelUid}', [
+        ContactController::class,
+        'apiDeleteLabel',
+    ])->name('api.vendor.label.delete');
+
+    // Contact Group APIs
     // Get all contact groups
     Route::get('/contact-groups', [
         ContactController::class,
         'apiGetContactGroups',
     ])->name('api.vendor.contact_groups.read');
+    // Create contact group
+    Route::post('/contact-groups', [
+        ContactController::class,
+        'apiCreateContactGroup',
+    ])->name('api.vendor.contact_group.create');
+    // Update contact group
+    Route::put('/contact-groups/{groupUid}', [
+        ContactController::class,
+        'apiUpdateContactGroup',
+    ])->name('api.vendor.contact_group.update');
+    // Delete contact group
+    Route::delete('/contact-groups/{groupUid}', [
+        ContactController::class,
+        'apiDeleteContactGroup',
+    ])->name('api.vendor.contact_group.delete');
+    // Add contacts to group
+    Route::post('/contact-groups/{groupUid}/contacts', [
+        ContactController::class,
+        'apiAddContactsToGroup',
+    ])->name('api.vendor.contact_group.add_contacts');
+    // Remove contacts from group
+    Route::delete('/contact-groups/{groupUid}/contacts', [
+        ContactController::class,
+        'apiRemoveContactsFromGroup',
+    ])->name('api.vendor.contact_group.remove_contacts');
 });
 
 // Mobile app apis
