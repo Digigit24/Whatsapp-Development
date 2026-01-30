@@ -156,6 +156,11 @@ $currentAppTheme=getUserAppTheme();
                         <i class="fa fa-store"></i> {{ __tr('Vendors') }}
                     </a>
                 </li>
+                <li class="nav-item {{ markAsActiveLink('central.webhooks.dashboard') }}">
+                    <a class="nav-link" href="{{ route('central.webhooks.dashboard') }}">
+                        <i class="fa fa-project-diagram"></i> {{ __tr('Webhooks') }}
+                    </a>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" href="#lwSubscriptionSubMenu" data-toggle="collapse" role="button"
                         aria-expanded="true" aria-controls="lwSubscriptionSubMenu">
