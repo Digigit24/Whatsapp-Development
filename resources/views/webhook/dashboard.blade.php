@@ -171,7 +171,7 @@
 <script>
     // Load webhook health metrics
     function loadWebhookHealth() {
-        fetch('/api/superadmin/webhooks/health')
+        fetch('/api/superadmin/webhooks/health', { credentials: 'include' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -186,7 +186,7 @@
 
     // Load all webhooks list
     function loadWebhooksList() {
-        fetch('/api/superadmin/webhooks/list')
+        fetch('/api/superadmin/webhooks/list', { credentials: 'include' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -261,7 +261,7 @@
             </div>
         `;
 
-        fetch(`/api/v1/tenants/${tenantId}/webhook/generate`)
+        fetch(`/api/v1/tenants/${tenantId}/webhook/generate`, { credentials: 'include' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -394,7 +394,7 @@
             </div>
         `;
 
-        fetch(`/api/superadmin/webhooks/details/${tenantId}`)
+        fetch(`/api/superadmin/webhooks/details/${tenantId}`, { credentials: 'include' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
