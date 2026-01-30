@@ -8,6 +8,7 @@ use App\Yantrana\Components\Contact\Controllers\ContactController;
 use App\Yantrana\Components\Campaign\Controllers\CampaignController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceController;
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppTemplateController;
+use App\Yantrana\Components\WhatsAppService\Controllers\SuperAdminWebhookController;
 use App\Yantrana\Components\Media\Controllers\MediaController;
 use App\Yantrana\Components\User\Controllers\UserController;
 
