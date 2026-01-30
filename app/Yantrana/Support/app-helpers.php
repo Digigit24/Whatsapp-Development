@@ -1848,31 +1848,69 @@ if (! function_exists('dispatchVendorWebhook')) {
     /**
      * Dispatch vendor Webhook
      *
+     * @param int $vendorId
+     * @param array $payload
+     * @param string $event - Event type: message.received, message.sent, message.status, contact.updated
      * @return mixed
      */
-    function dispatchVendorWebhook($vendorId, $payload = [])
+    function dispatchVendorWebhook($vendorId, $payload = [], $event = 'message.received')
     {
-        $payload = array_merge([
-            'contact' => null,
-            'message' => [
-                'whatsapp_business_phone_number_id' => null,
+        $vendorPlanDetails = vendorPlanDetails('api_access', 0, $vendorId);
+        if (!$vendorPlanDetails['is_limit_available']) {
+            return;
+        }
+
+        $enableWebhook = getVendorSettings('enable_vendor_webhook', null, null, $vendorId);
+        $vendorWebhookEndpoint = getVendorSettings('vendor_webhook_endpoint', null, null, $vendorId);
+
+        if (!$enableWebhook || !$vendorWebhookEndpoint) {
+            return;
+        }
+
+        // Get vendor UID for identification
+        $vendorUid = getPublicVendorUid($vendorId);
+
+        // Build enhanced payload
+        $webhookPayload = [
+            'event' => $event,
+            'vendor_uid' => $vendorUid,
+            'timestamp' => now()->toIso8601String(),
+            'contact' => isset($payload['contact']) ? array_merge([
+                'uid' => null,
+                'phone_number' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'full_name' => null,
+                'email' => null,
+                'language_code' => null,
+                'country' => null,
+                'status' => null,
+                'labels' => [],
+                'assigned_user' => null,
+                'is_blocked' => false,
+            ], $payload['contact']) : null,
+            'message' => isset($payload['message']) ? array_merge([
+                'uid' => null,
                 'whatsapp_message_id' => null,
+                'whatsapp_business_phone_number_id' => null,
                 'replied_to_whatsapp_message_id' => null,
+                'is_incoming_message' => null,
                 'is_new_message' => null,
                 'body' => null,
                 'status' => null,
                 'media' => null,
-            ],
-            'whatsapp_webhook_payload' => null,
-        ], $payload);
-        $vendorPlanDetails = vendorPlanDetails('api_access', 0, $vendorId);
-        if ($vendorPlanDetails['is_limit_available'] and getVendorSettings('enable_vendor_webhook', null, null, $vendorId) and ($vendorWebhookEndpoint = getVendorSettings('vendor_webhook_endpoint', null, null, $vendorId))) {
-            try {
-                Http::post($vendorWebhookEndpoint, $payload); //->throw();
-            } catch (\Throwable $th) {
-                // __logDebug('Webhook error:');
-                // __logDebug($th->getMessage());
-            }
+                'message_type' => 'text',
+                'messaged_at' => null,
+                'formatted_message_time' => null,
+            ], $payload['message']) : null,
+            'whatsapp_webhook_payload' => $payload['whatsapp_webhook_payload'] ?? null,
+        ];
+
+        try {
+            Http::timeout(5)->post($vendorWebhookEndpoint, $webhookPayload);
+        } catch (\Throwable $th) {
+            // Log error silently
+            // __logDebug('Webhook error: ' . $th->getMessage());
         }
     }
 }

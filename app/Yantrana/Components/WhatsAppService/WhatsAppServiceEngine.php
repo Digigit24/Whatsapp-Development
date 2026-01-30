@@ -3389,31 +3389,48 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
                     'messageWamid' => $messageWamid,
                 ]);
             }
-            // call webhook
+            // call webhook with enhanced data
+            $contact->load(['labels', 'assignedUser']);
             dispatchVendorWebhook($vendorId, [
-                'contact' => array_merge([
-                    'status' => $contactStatus,
-                    'phone_number' => $contact->wa_id,
+                'contact' => [
                     'uid' => $contact->_uid,
-                ], $contact->only([
-                    'first_name',
-                    'last_name',
-                    'email',
-                    'language_code',
-                ]), [
+                    'phone_number' => $contact->wa_id,
+                    'first_name' => $contact->first_name,
+                    'last_name' => $contact->last_name,
+                    'full_name' => $contact->full_name,
+                    'name_initials' => $contact->name_initials,
+                    'email' => $contact->email,
+                    'language_code' => $contact->language_code,
                     'country' => $contact->country?->name,
-                ]),
+                    'status' => $contactStatus,
+                    'is_blocked' => !empty($contact->wa_blocked_at),
+                    'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
+                        '_uid' => $l->_uid,
+                        'title' => $l->title,
+                        'bg_color' => $l->bg_color,
+                        'text_color' => $l->text_color,
+                    ])->values()->toArray() : [],
+                    'assigned_user' => $contact->assignedUser ? [
+                        '_uid' => $contact->assignedUser->_uid,
+                        'full_name' => trim($contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name),
+                    ] : null,
+                ],
                 'message' => [
-                    'whatsapp_business_phone_number_id' => $phoneNumberId ?? null,
+                    'uid' => $contact->lastMessage?->_uid,
                     'whatsapp_message_id' => $messageWamid ?? null,
+                    'whatsapp_business_phone_number_id' => $phoneNumberId ?? null,
                     'replied_to_whatsapp_message_id' => $repliedToWamid,
+                    'is_incoming_message' => true,
                     'is_new_message' => $isNewIncomingMessage,
                     'body' => $messageBody,
                     'status' => $messageStatus ?? null,
                     'media' => $mediaData,
+                    'message_type' => $mediaData ? ($mediaData['type'] ?? 'media') : 'text',
+                    'messaged_at' => $contact->lastMessage?->messaged_at?->toIso8601String(),
+                    'formatted_message_time' => $contact->lastMessage?->formatted_message_time,
                 ],
                 'whatsapp_webhook_payload' => $request->all()
-            ]);
+            ], 'message.received');
             return true;
         }
         // something may not available try again
