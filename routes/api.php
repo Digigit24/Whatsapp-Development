@@ -535,7 +535,9 @@ Route::prefix('v1/tenants/{vendorUid}/webhook')->group(function () {
 |--------------------------------------------------------------------------
 | These routes allow superadmin to monitor all tenant webhooks
 */
-Route::prefix('superadmin/webhooks')->group(function () {
+Route::prefix('superadmin/webhooks')
+    ->middleware([App\Http\Middleware\CentralAccessCheckpost::class])
+    ->group(function () {
     // List all tenant webhooks
     Route::get('list', [
         SuperAdminWebhookController::class,
