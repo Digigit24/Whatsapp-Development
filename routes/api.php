@@ -241,6 +241,11 @@ Route::group([
         WhatsAppServiceController::class,
         'apiGetContactMessages',
     ])->name('api.vendor.contact.messages.read');
+    // Get full chat context for contact (contact info + labels + team members)
+    Route::get('/contacts/{contactUid}/chat-context', [
+        WhatsAppServiceController::class,
+        'apiGetContactChatContext',
+    ])->name('api.vendor.contact.chat_context');
     // Send text message to contact
     Route::post('/contacts/{contactUid}/messages', [
         WhatsAppServiceController::class,
@@ -281,6 +286,31 @@ Route::group([
         WhatsAppServiceController::class,
         'apiUpdateNotes',
     ])->name('api.vendor.contact.notes.update');
+    // Block contact
+    Route::post('/contacts/{contactUid}/block', [
+        WhatsAppServiceController::class,
+        'apiBlockContact',
+    ])->name('api.vendor.contact.block');
+    // Unblock contact
+    Route::post('/contacts/{contactUid}/unblock', [
+        WhatsAppServiceController::class,
+        'apiUnblockContact',
+    ])->name('api.vendor.contact.unblock');
+    // Update bot settings for contact
+    Route::put('/contacts/{contactUid}/bot-settings', [
+        WhatsAppServiceController::class,
+        'apiUpdateBotSettings',
+    ])->name('api.vendor.contact.bot_settings');
+    // Get quick bot replies
+    Route::get('/contacts/{contactUid}/quick-replies', [
+        WhatsAppServiceController::class,
+        'apiGetQuickBotReplies',
+    ])->name('api.vendor.contact.quick_replies');
+    // Send quick bot reply
+    Route::post('/contacts/{contactUid}/quick-replies', [
+        WhatsAppServiceController::class,
+        'apiSendQuickBotReply',
+    ])->name('api.vendor.contact.quick_replies.send');
 
     // Message Log APIs
     // Get message log

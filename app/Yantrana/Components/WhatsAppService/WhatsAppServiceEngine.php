@@ -3621,7 +3621,7 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
      * @param array $text
      * @return string
      */
-    protected function formatSystemMessage($systemMessageData) 
+    protected function formatSystemMessage($systemMessageData)
     {
         $message = '';
         if (!__isEmpty($systemMessageData)) {
@@ -3633,6 +3633,68 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
         }
 
         return $message;
+    }
+
+    /**
+     * Public method to format WhatsApp text for API responses
+     *
+     * @param string|null $text
+     * @return string|null
+     */
+    public function formatWhatsAppTextForApi($text)
+    {
+        if (empty($text)) {
+            return $text;
+        }
+        return formatWhatsAppText($text);
+    }
+
+    /**
+     * Public method to compile message with values for API responses
+     *
+     * @param array|null $messageData
+     * @return string|null
+     */
+    public function compileMessageForApi($messageData)
+    {
+        if (empty($messageData)) {
+            return null;
+        }
+        return $this->compileMessageWithValues($messageData);
+    }
+
+    /**
+     * Process bot reply for contact (for API use)
+     *
+     * @param object $contact
+     * @param object $botReply
+     * @return EngineResponse|null
+     */
+    public function processBotReplyForContact($contact, $botReply)
+    {
+        if (__isEmpty($contact) || __isEmpty($botReply)) {
+            return $this->engineFailedResponse([], __tr('Contact or bot reply not found'));
+        }
+
+        // Get the bot reply message data
+        $replyMessage = $botReply->reply_text;
+
+        if (empty($replyMessage)) {
+            return $this->engineFailedResponse([], __tr('Bot reply message is empty'));
+        }
+
+        // Prepare request data
+        $requestData = [
+            'contact_uid' => $contact->_uid,
+            'message_body' => $replyMessage,
+        ];
+
+        // Use existing send message method
+        return $this->processSendChatMessage((object) $requestData, false, false, [
+            'options' => [
+                'bot_reply' => true,
+            ]
+        ]);
     }
 
     public function setupWhatsAppEmbeddedSignUpProcess($request)

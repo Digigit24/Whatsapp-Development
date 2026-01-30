@@ -298,11 +298,12 @@ class ContactRepository extends BaseRepository implements ContactRepositoryInter
         )
         ->orderBy('latest_messages.latest_message', 'desc')
         ->leftJoin(
-            DB::raw('(SELECT contacts__id, COUNT(*) as unread_messages_count FROM whatsapp_message_logs WHERE status = "received" AND is_incoming_message = 1 GROUP BY contacts__id) as unread_counts'),
+            DB::raw('(SELECT contacts__id, COALESCE(COUNT(*), 0) as unread_messages_count FROM whatsapp_message_logs WHERE status = "received" AND is_incoming_message = 1 GROUP BY contacts__id) as unread_counts'),
             'contacts._id',
             '=',
             'unread_counts.contacts__id'
-        );
+        )
+        ->selectRaw('contacts.*, COALESCE(unread_counts.unread_messages_count, 0) as unread_messages_count');
         if ($selectedLabel) {
             $sub = DB::table('contact_labels')
             ->select('contact_labels.contacts__id', 'contact_labels.labels__id')

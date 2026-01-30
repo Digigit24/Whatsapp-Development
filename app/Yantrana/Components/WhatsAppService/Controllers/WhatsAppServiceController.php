@@ -1014,26 +1014,47 @@ class WhatsAppServiceController extends BaseController
     public function apiGetChatContacts($vendorUid)
     {
         $vendorId = request()->get('_vendor_id');
-        $assigned = request()->get('assigned'); // 'to-me' or null
+        $assigned = request()->get('assigned'); // 'to-me', 'unassigned', user_id, or null for all
         $search = request()->get('search');
+        $unreadOnly = request()->get('unread_only', false);
+        $labelId = request()->get('label_id');
         $page = request()->get('page', 1);
         $limit = request()->get('limit', 20);
 
         $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
-            ->has('lastMessage')
-            ->with(['lastMessage', 'labels', 'assignedUser'])
+            ->has('lastIncomingMessage')
+            ->with(['lastMessage', 'lastIncomingMessage', 'labels', 'assignedUser'])
             ->withCount(['unreadMessages']);
 
+        // Search filter
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('first_name', 'like', "%{$search}%")
                   ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('wa_id', 'like', "%{$search}%");
+                  ->orWhere('wa_id', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
+        // Assignment filter
         if ($assigned === 'to-me') {
             $query->where('assigned_users__id', getUserID());
+        } elseif ($assigned === 'unassigned') {
+            $query->whereNull('assigned_users__id');
+        } elseif (is_numeric($assigned)) {
+            $query->where('assigned_users__id', $assigned);
+        }
+
+        // Unread only filter
+        if ($unreadOnly && $unreadOnly !== 'false') {
+            $query->has('unreadMessages');
+        }
+
+        // Label filter
+        if ($labelId) {
+            $query->whereHas('labels', function($q) use ($labelId) {
+                $q->where('labels._id', $labelId);
+            });
         }
 
         // Order by latest message using subquery
@@ -1047,30 +1068,51 @@ class WhatsAppServiceController extends BaseController
         $contacts = $query->paginate($limit, ['*'], 'page', $page);
 
         $contactData = $contacts->map(function ($contact) {
+            // Calculate reply window status
+            $lastIncoming = $contact->lastIncomingMessage;
+            $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+            $replyWindowExpiresAt = $lastIncoming ? $lastIncoming->messaged_at->addHours(24) : null;
+
             return [
                 '_uid' => $contact->_uid,
+                '_id' => $contact->_id,
                 'first_name' => $contact->first_name,
                 'last_name' => $contact->last_name,
-                'full_name' => trim($contact->first_name . ' ' . $contact->last_name),
+                'full_name' => $contact->full_name,
+                'name_initials' => $contact->name_initials,
                 'wa_id' => $contact->wa_id,
-                'country_code' => $contact->country_code ?? null,
-                'profile_picture' => $contact->profile_picture ?? null,
-                'last_message_at' => $contact->lastMessage?->messaged_at,
-                'unread_count' => $contact->unread_messages_count,
+                'email' => $contact->email,
+                'language_code' => $contact->language_code,
+                'country_code' => $contact->countries__id,
+                'unread_messages_count' => $contact->unread_messages_count ?? 0,
+                'is_blocked' => !empty($contact->wa_blocked_at),
+                'wa_blocked_at' => $contact->wa_blocked_at,
+                'disable_ai_bot' => (bool) $contact->disable_ai_bot,
+                'disable_reply_bot' => (bool) $contact->disable_reply_bot,
+                'is_reply_window_open' => $isReplyWindowOpen,
+                'reply_window_expires_at' => $replyWindowExpiresAt?->toIso8601String(),
+                'reply_window_expires_human' => $replyWindowExpiresAt?->diffForHumans(['parts' => 2, 'join' => true]),
                 'last_message' => $contact->lastMessage ? [
+                    '_uid' => $contact->lastMessage->_uid,
                     'message' => $contact->lastMessage->message,
-                    'is_incoming' => $contact->lastMessage->is_incoming_message,
-                    'messaged_at' => $contact->lastMessage->messaged_at,
+                    'is_incoming_message' => (bool) $contact->lastMessage->is_incoming_message,
+                    'status' => $contact->lastMessage->status,
+                    'messaged_at' => $contact->lastMessage->messaged_at?->toIso8601String(),
+                    'formatted_message_ago_time' => $contact->lastMessage->formatted_message_ago_time,
                 ] : null,
                 'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
+                    '_id' => $l->_id,
                     '_uid' => $l->_uid,
                     'title' => $l->title,
                     'bg_color' => $l->bg_color,
                     'text_color' => $l->text_color,
-                ]) : [],
+                ])->values() : [],
                 'assigned_user' => $contact->assignedUser ? [
+                    '_id' => $contact->assignedUser->_id,
                     '_uid' => $contact->assignedUser->_uid,
-                    'name' => $contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name,
+                    'first_name' => $contact->assignedUser->first_name,
+                    'last_name' => $contact->assignedUser->last_name,
+                    'full_name' => trim($contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name),
                 ] : null,
             ];
         });
@@ -1102,11 +1144,12 @@ class WhatsAppServiceController extends BaseController
         $vendorId = request()->get('_vendor_id');
         $page = request()->get('page', 1);
         $limit = request()->get('limit', 50);
+        $markAsRead = request()->get('mark_as_read', true);
 
         $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
             '_uid' => $contactUid,
             'vendors__id' => $vendorId,
-        ])->first();
+        ])->with(['labels', 'assignedUser', 'lastIncomingMessage'])->first();
 
         if (__isEmpty($contact)) {
             return processExternalApiResponse([
@@ -1116,38 +1159,54 @@ class WhatsAppServiceController extends BaseController
         }
 
         // Mark messages as read (update status from 'received' to 'read')
-        \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
-            'contacts__id' => $contact->_id,
-            'is_incoming_message' => 1,
-            'status' => 'received',
-        ])->update(['status' => 'read']);
+        if ($markAsRead && $markAsRead !== 'false') {
+            \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
+                'contacts__id' => $contact->_id,
+                'is_incoming_message' => 1,
+                'status' => 'received',
+            ])->update(['status' => 'read']);
+        }
 
         $messages = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('contacts__id', $contact->_id)
             ->orderByDesc('messaged_at')
             ->paginate($limit, ['*'], 'page', $page);
 
         $messageData = $messages->map(function ($msg) {
+            // Compile template message if needed
+            $templateMessage = null;
+            if (!$msg->message || isset($msg->__data['interaction_message_data'])) {
+                $templateMessage = $this->whatsAppServiceEngine->compileMessageForApi($msg->__data);
+            }
+
             return [
                 '_uid' => $msg->_uid,
                 'wamid' => $msg->wamid,
-                'message' => $msg->message,
+                'message' => $this->whatsAppServiceEngine->formatWhatsAppTextForApi($msg->message),
+                'message_raw' => $msg->message,
                 'is_incoming_message' => (bool) $msg->is_incoming_message,
+                'is_system_message' => (bool) $msg->is_system_message,
                 'status' => $msg->status,
-                'messaged_at' => $msg->messaged_at,
+                'messaged_at' => $msg->messaged_at?->toIso8601String(),
+                'formatted_message_time' => $msg->formatted_message_time,
+                'formatted_message_ago_time' => $msg->formatted_message_ago_time,
+                'whatsapp_message_error' => $msg->whatsapp_message_error,
+                'replied_to_message_uid' => $msg->replied_to_whatsapp_message_logs__uid ?? null,
+                'campaigns__id' => $msg->campaigns__id,
+                'template_message' => $templateMessage,
                 'message_type' => $msg->__data['message_type'] ?? 'text',
                 'media_values' => $msg->__data['media_values'] ?? null,
                 'template_data' => $msg->__data['template_data'] ?? null,
-                'interaction_data' => $msg->__data['interaction_message_data'] ?? null,
+                'template_components' => $msg->__data['template_components'] ?? null,
+                'interaction_message_data' => $msg->__data['interaction_message_data'] ?? null,
+                'is_bot_reply' => $msg->__data['options']['bot_reply'] ?? false,
+                'is_ai_bot_reply' => $msg->__data['options']['ai_bot_reply'] ?? false,
             ];
         });
 
         // Check if reply window is open (received message in last 24 hours)
-        $lastIncoming = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
-            'contacts__id' => $contact->_id,
-            'is_incoming_message' => 1,
-        ])->orderByDesc('messaged_at')->first();
-
+        $lastIncoming = $contact->lastIncomingMessage;
         $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+        $replyWindowExpiresAt = $lastIncoming ? $lastIncoming->messaged_at->addHours(24) : null;
 
         return processExternalApiResponse([
             'result' => 'success',
@@ -1155,12 +1214,37 @@ class WhatsAppServiceController extends BaseController
         ], [
             'contact' => [
                 '_uid' => $contact->_uid,
+                '_id' => $contact->_id,
                 'first_name' => $contact->first_name,
                 'last_name' => $contact->last_name,
+                'full_name' => $contact->full_name,
+                'name_initials' => $contact->name_initials,
                 'wa_id' => $contact->wa_id,
+                'email' => $contact->email,
+                'language_code' => $contact->language_code,
+                'is_blocked' => !empty($contact->wa_blocked_at),
+                'wa_blocked_at' => $contact->wa_blocked_at,
+                'disable_ai_bot' => (bool) $contact->disable_ai_bot,
+                'disable_reply_bot' => (bool) $contact->disable_reply_bot,
+                'notes' => $contact->__data['contact_notes'] ?? '',
+                'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
+                    '_id' => $l->_id,
+                    '_uid' => $l->_uid,
+                    'title' => $l->title,
+                    'bg_color' => $l->bg_color,
+                    'text_color' => $l->text_color,
+                ])->values() : [],
+                'assigned_user' => $contact->assignedUser ? [
+                    '_id' => $contact->assignedUser->_id,
+                    '_uid' => $contact->assignedUser->_uid,
+                    'first_name' => $contact->assignedUser->first_name,
+                    'last_name' => $contact->assignedUser->last_name,
+                    'full_name' => trim($contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name),
+                ] : null,
             ],
             'is_reply_window_open' => $isReplyWindowOpen,
-            'reply_window_expires_at' => $lastIncoming ? $lastIncoming->messaged_at->addHours(24)->toIso8601String() : null,
+            'reply_window_expires_at' => $replyWindowExpiresAt?->toIso8601String(),
+            'reply_window_expires_human' => $replyWindowExpiresAt?->diffForHumans(['parts' => 2, 'join' => true]),
             'messages' => $messageData,
             'pagination' => [
                 'current_page' => $messages->currentPage(),
@@ -1390,27 +1474,80 @@ class WhatsAppServiceController extends BaseController
     public function apiGetUnreadCount($vendorUid)
     {
         $vendorId = request()->get('_vendor_id');
+        $userId = getUserID();
 
         // Get contact IDs for this vendor
         $contactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
             ->pluck('_id');
 
-        // Unread = incoming messages with status 'received' (not yet read)
-        $unreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $contactIds)
+        // Total unread = incoming messages with status 'received' (not yet read)
+        $totalUnreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $contactIds)
             ->where([
                 'is_incoming_message' => 1,
                 'status' => 'received',
             ])->count();
 
-        $unreadContactsCount = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+        // Unread contacts count (total)
+        $totalUnreadContactsCount = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
             ->whereHas('unreadMessages')->count();
+
+        // My assigned unread count
+        $myAssignedContactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->where('assigned_users__id', $userId)
+            ->pluck('_id');
+
+        $myAssignedUnreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $myAssignedContactIds)
+            ->where([
+                'is_incoming_message' => 1,
+                'status' => 'received',
+            ])->count();
+
+        // Unassigned unread count
+        $unassignedContactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            ->whereNull('assigned_users__id')
+            ->pluck('_id');
+
+        $unassignedUnreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $unassignedContactIds)
+            ->where([
+                'is_incoming_message' => 1,
+                'status' => 'received',
+            ])->count();
+
+        // Get unread counts per team member
+        $teamMembers = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+            ->where('status', 1)
+            ->get();
+
+        $usersUnreadCounts = [];
+        foreach ($teamMembers as $member) {
+            $memberContactIds = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+                ->where('assigned_users__id', $member->_id)
+                ->pluck('_id');
+
+            $memberUnreadCount = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::whereIn('contacts__id', $memberContactIds)
+                ->where([
+                    'is_incoming_message' => 1,
+                    'status' => 'received',
+                ])->count();
+
+            if ($memberUnreadCount > 0) {
+                $usersUnreadCounts[$member->_uid] = [
+                    'user_uid' => $member->_uid,
+                    'user_name' => trim($member->first_name . ' ' . $member->last_name),
+                    'unread_count' => $memberUnreadCount,
+                ];
+            }
+        }
 
         return processExternalApiResponse([
             'result' => 'success',
             'message' => __tr('Unread count fetched successfully'),
         ], [
-            'unread_messages' => $unreadCount,
-            'unread_contacts' => $unreadContactsCount,
+            'total_unread_messages' => $totalUnreadCount,
+            'total_unread_contacts' => $totalUnreadContactsCount,
+            'my_assigned_unread_count' => $myAssignedUnreadCount,
+            'unassigned_unread_count' => $unassignedUnreadCount,
+            'users_unread_counts' => $usersUnreadCounts,
         ]);
     }
 
@@ -1766,6 +1903,335 @@ class WhatsAppServiceController extends BaseController
         ], [
             'contact_uid' => $contact->_uid,
             'marked_read' => $updatedCount,
+        ]);
+    }
+
+    /**
+     * API: Get full chat context for contact (contact info + labels + team members + initial messages)
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiGetContactChatContext($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->with(['labels', 'assignedUser', 'lastIncomingMessage', 'customFieldValues.customField'])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        // Get all labels for vendor
+        $allLabels = \App\Yantrana\Components\Contact\Models\LabelModel::where('vendors__id', $vendorId)
+            ->get()
+            ->map(fn($l) => [
+                '_id' => $l->_id,
+                '_uid' => $l->_uid,
+                'title' => $l->title,
+                'bg_color' => $l->bg_color,
+                'text_color' => $l->text_color,
+            ]);
+
+        // Get team members
+        $teamMembers = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+            ->where('status', 1)
+            ->get()
+            ->map(fn($u) => [
+                '_id' => $u->_id,
+                '_uid' => $u->_uid,
+                'first_name' => $u->first_name,
+                'last_name' => $u->last_name,
+                'full_name' => trim($u->first_name . ' ' . $u->last_name),
+                'email' => $u->email,
+            ]);
+
+        // Reply window status
+        $lastIncoming = $contact->lastIncomingMessage;
+        $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+        $replyWindowExpiresAt = $lastIncoming ? $lastIncoming->messaged_at->addHours(24) : null;
+
+        // Custom fields
+        $customFields = $contact->customFieldValues->map(fn($cfv) => [
+            'field_name' => $cfv->customField->input_name ?? null,
+            'field_label' => $cfv->customField->input_label ?? null,
+            'value' => $cfv->field_value,
+        ]);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Chat context fetched successfully'),
+        ], [
+            'contact' => [
+                '_uid' => $contact->_uid,
+                '_id' => $contact->_id,
+                'first_name' => $contact->first_name,
+                'last_name' => $contact->last_name,
+                'full_name' => $contact->full_name,
+                'name_initials' => $contact->name_initials,
+                'wa_id' => $contact->wa_id,
+                'email' => $contact->email,
+                'language_code' => $contact->language_code,
+                'is_blocked' => !empty($contact->wa_blocked_at),
+                'wa_blocked_at' => $contact->wa_blocked_at,
+                'disable_ai_bot' => (bool) $contact->disable_ai_bot,
+                'disable_reply_bot' => (bool) $contact->disable_reply_bot,
+                'notes' => $contact->__data['contact_notes'] ?? '',
+                'custom_fields' => $customFields,
+                'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
+                    '_id' => $l->_id,
+                    '_uid' => $l->_uid,
+                    'title' => $l->title,
+                    'bg_color' => $l->bg_color,
+                    'text_color' => $l->text_color,
+                ])->values() : [],
+                'assigned_user' => $contact->assignedUser ? [
+                    '_id' => $contact->assignedUser->_id,
+                    '_uid' => $contact->assignedUser->_uid,
+                    'first_name' => $contact->assignedUser->first_name,
+                    'last_name' => $contact->assignedUser->last_name,
+                    'full_name' => trim($contact->assignedUser->first_name . ' ' . $contact->assignedUser->last_name),
+                ] : null,
+            ],
+            'is_reply_window_open' => $isReplyWindowOpen,
+            'reply_window_expires_at' => $replyWindowExpiresAt?->toIso8601String(),
+            'reply_window_expires_human' => $replyWindowExpiresAt?->diffForHumans(['parts' => 2, 'join' => true]),
+            'all_labels' => $allLabels,
+            'team_members' => $teamMembers,
+        ]);
+    }
+
+    /**
+     * API: Block contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiBlockContact($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        // Check if reply window is open
+        $lastIncoming = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where([
+            'contacts__id' => $contact->_id,
+            'is_incoming_message' => 1,
+        ])->orderByDesc('messaged_at')->first();
+
+        $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+
+        if (!$isReplyWindowOpen) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Cannot block contact - reply window is closed'),
+            ]);
+        }
+
+        $contact->wa_blocked_at = now();
+        $contact->save();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contact blocked successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'wa_blocked_at' => $contact->wa_blocked_at->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * API: Unblock contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiUnblockContact($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $contact->wa_blocked_at = null;
+        $contact->save();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Contact unblocked successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+        ]);
+    }
+
+    /**
+     * API: Update contact bot settings - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiUpdateBotSettings($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $enableAiBot = request()->get('enable_ai_bot');
+        $enableReplyBot = request()->get('enable_reply_bot');
+
+        if ($enableAiBot !== null) {
+            $contact->disable_ai_bot = $enableAiBot ? 0 : 1;
+        }
+
+        if ($enableReplyBot !== null) {
+            $contact->disable_reply_bot = $enableReplyBot ? 0 : 1;
+        }
+
+        $contact->save();
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Bot settings updated successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'disable_ai_bot' => (bool) $contact->disable_ai_bot,
+            'disable_reply_bot' => (bool) $contact->disable_reply_bot,
+        ]);
+    }
+
+    /**
+     * API: Get quick bot replies for contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiGetQuickBotReplies($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        // Get active bot replies
+        $botReplies = \App\Yantrana\Components\BotReply\Models\BotReplyModel::where([
+            'vendors__id' => $vendorId,
+            'status' => 1,
+        ])->get()->map(fn($br) => [
+            '_uid' => $br->_uid,
+            'name' => $br->name,
+            'trigger_type' => $br->trigger_type,
+            'reply_trigger' => $br->reply_trigger,
+        ]);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Quick bot replies fetched successfully'),
+        ], [
+            'bot_replies' => $botReplies,
+        ]);
+    }
+
+    /**
+     * API: Send quick bot reply to contact - External API
+     *
+     * @param string $vendorUid
+     * @param string $contactUid
+     * @return json
+     */
+    public function apiSendQuickBotReply($vendorUid, $contactUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+        $botReplyUid = request()->get('bot_reply_uid');
+
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
+            '_uid' => $contactUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($contact)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Contact not found'),
+            ]);
+        }
+
+        $botReply = \App\Yantrana\Components\BotReply\Models\BotReplyModel::where([
+            '_uid' => $botReplyUid,
+            'vendors__id' => $vendorId,
+        ])->first();
+
+        if (__isEmpty($botReply)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Bot reply not found'),
+            ]);
+        }
+
+        // Use existing engine method to send the bot reply
+        $processReaction = $this->whatsAppServiceEngine->processBotReplyForContact($contact, $botReply);
+
+        if ($processReaction && $processReaction->failed()) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => $processReaction->message(),
+            ]);
+        }
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('Bot reply sent successfully'),
+        ], [
+            'contact_uid' => $contact->_uid,
+            'bot_reply_uid' => $botReply->_uid,
         ]);
     }
 }
