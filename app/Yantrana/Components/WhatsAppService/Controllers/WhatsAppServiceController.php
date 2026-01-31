@@ -1514,7 +1514,7 @@ class WhatsAppServiceController extends BaseController
             ])->count();
 
         // Get unread counts per team member
-        $teamMembers = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+        $teamMembers = \App\Models\User::where('vendors__id', $vendorId)
             ->where('status', 1)
             ->get();
 
@@ -1577,7 +1577,7 @@ class WhatsAppServiceController extends BaseController
         $userUid = request()->get('user_uid');
 
         if ($userUid) {
-            $user = \App\Yantrana\Components\User\Models\User::where('_uid', $userUid)->first();
+            $user = \App\Models\User::where('_uid', $userUid)->first();
             if (__isEmpty($user)) {
                 return processExternalApiResponse([
                     'result' => 'failed',
@@ -1848,7 +1848,7 @@ class WhatsAppServiceController extends BaseController
     {
         $vendorId = request()->get('_vendor_id');
 
-        $users = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+        $users = \App\Models\User::where('vendors__id', $vendorId)
             ->where('status', 1)
             ->get();
 
@@ -1941,7 +1941,7 @@ class WhatsAppServiceController extends BaseController
             ]);
 
         // Get team members
-        $teamMembers = \App\Yantrana\Components\User\Models\User::where('vendors__id', $vendorId)
+        $teamMembers = \App\Models\User::where('vendors__id', $vendorId)
             ->where('status', 1)
             ->get()
             ->map(fn($u) => [
