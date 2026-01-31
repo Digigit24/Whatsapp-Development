@@ -77,6 +77,31 @@ Route::get('/clear-cache/{key}', function ($key) {
     }
 });
 
+// Diagnostic route to check Pusher/Broadcasting settings
+Route::get('/check-pusher/{key}', function ($key) {
+    $secretKey = 'your-secret-key-change-this-2024';
+
+    if ($key !== $secretKey) {
+        return response()->json(['error' => 'Invalid key'], 403);
+    }
+
+    return response()->json([
+        'database_settings' => [
+            'broadcast_connection_driver' => getAppSettings('broadcast_connection_driver'),
+            'pusher_app_id' => getAppSettings('pusher_app_id') ? '✓ SET (' . getAppSettings('pusher_app_id') . ')' : '✗ NOT SET',
+            'pusher_app_key' => getAppSettings('pusher_app_key') ? '✓ SET' : '✗ NOT SET',
+            'pusher_app_secret' => getAppSettings('pusher_app_secret') ? '✓ SET' : '✗ NOT SET',
+            'pusher_app_cluster' => getAppSettings('pusher_app_cluster') ? '✓ SET (' . getAppSettings('pusher_app_cluster') . ')' : '✗ NOT SET',
+        ],
+        'current_config' => [
+            'broadcasting_default' => config('broadcasting.default'),
+            'pusher_key' => config('broadcasting.connections.pusher.key') ? '✓ SET' : '✗ NOT SET',
+            'pusher_cluster' => config('broadcasting.connections.pusher.options.cluster'),
+        ],
+        'status' => getAppSettings('pusher_app_id') ? 'PUSHER CONFIGURED' : 'PUSHER NOT CONFIGURED',
+    ]);
+});
+
 // user console
 Route::get('/console', function () {
     return hasCentralAccess() ? Redirect::route('central.console') : Redirect::route('vendor.console');
