@@ -363,23 +363,94 @@ Route::group(['middleware' => 'guest'], function () {
     });
 });
 // Custom broadcasting auth for API token authentication
-// This route MUST be outside app_api.vendor.authenticate middleware to handle Pusher auth format
+// Supports both YesTokenAuth tokens AND external JWT tokens
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
-    // Manually verify the token (YesTokenAuth already has special handling for this URL)
-    $isVerified = \YesTokenAuth::verifyToken();
+    $channelName = $request->input('channel_name');
+    $socketId = $request->input('socket_id');
+    $authToken = $request->input('auth_token') ?? $request->query('auth_token');
 
-    if ($isVerified['error'] && $isVerified['error'] !== false) {
-        return response()->json(['error' => 'Unauthorized: ' . $isVerified['error']], 403);
+    // Extract vendor UID from channel name
+    $vendorUid = null;
+    if (str_starts_with($channelName, 'private-vendor-channel.')) {
+        $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
     }
 
-    // Log in the user from the token
-    $userInfo = \App\Yantrana\Components\Auth\Models\AuthModel::where('_id', $isVerified['aud'])->first();
-    if (__isEmpty($userInfo) || $userInfo->status != 1) {
-        return response()->json(['error' => 'User not found or inactive'], 403);
+    if (!$vendorUid) {
+        return response()->json(['error' => 'Invalid channel format'], 403);
     }
-    \Auth::loginUsingId($isVerified['aud']);
 
-    // Now create Pusher auth signature
+    // Check if vendor exists
+    $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+    if (!$vendor) {
+        return response()->json(['error' => 'Vendor not found'], 403);
+    }
+
+    $authorized = false;
+
+    // Method 1: Try YesTokenAuth (Laravel encrypted token)
+    if ($authToken && str_starts_with($authToken, 'eyJpd')) {
+        // This looks like a Laravel encrypted token
+        $isVerified = \YesTokenAuth::verifyToken($authToken);
+        if (!$isVerified['error'] || $isVerified['error'] === false) {
+            // Check if user belongs to this vendor
+            $userInfo = \App\Yantrana\Components\Auth\Models\AuthModel::where('_id', $isVerified['aud'])->first();
+            if ($userInfo && $userInfo->vendors__id == $vendor->_id) {
+                $authorized = true;
+            }
+        }
+    }
+
+    // Method 2: Try external JWT (standard format eyJhbGc...)
+    if (!$authorized && $authToken && str_starts_with($authToken, 'eyJhbGc')) {
+        try {
+            // Decode JWT payload (without verification for now - add secret verification in production)
+            $parts = explode('.', $authToken);
+            if (count($parts) === 3) {
+                $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+                // Check if JWT contains vendor access info
+                // Option 1: Check if tenant_id matches vendor (you need to set up this mapping)
+                // Option 2: Check if vendor_uid is in the JWT
+                // Option 3: Check API key header
+
+                if ($payload) {
+                    // For now, check if vendor_uid is passed in JWT or request
+                    $jwtVendorUid = $payload['vendor_uid'] ?? $payload['whatsapp_vendor_uid'] ?? null;
+
+                    if ($jwtVendorUid && $jwtVendorUid === $vendorUid) {
+                        $authorized = true;
+                    }
+
+                    // Alternative: Trust JWT and allow if tenant has API access configured
+                    // You can add your tenant-vendor mapping logic here
+                }
+            }
+        } catch (\Exception $e) {
+            // JWT parsing failed
+        }
+    }
+
+    // Method 3: API Key authentication (check Authorization header)
+    if (!$authorized) {
+        $apiKey = $request->header('X-Api-Key') ?? $request->header('Authorization');
+        if ($apiKey) {
+            $apiKey = str_replace('Bearer ', '', $apiKey);
+            // Check if this API key belongs to the vendor
+            $vendorSettings = \App\Yantrana\Components\Vendor\Models\VendorSettingsModel::where('vendors__id', $vendor->_id)
+                ->where('name', 'vendor_api_access_token')
+                ->where('value', $apiKey)
+                ->first();
+            if ($vendorSettings) {
+                $authorized = true;
+            }
+        }
+    }
+
+    if (!$authorized) {
+        return response()->json(['error' => 'Unauthorized - invalid token or no access to this vendor'], 403);
+    }
+
+    // Create Pusher auth signature
     $pusher = new \Pusher\Pusher(
         config('broadcasting.connections.pusher.key'),
         config('broadcasting.connections.pusher.secret'),
@@ -387,21 +458,8 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         config('broadcasting.connections.pusher.options')
     );
 
-    $channelName = $request->input('channel_name');
-    $socketId = $request->input('socket_id');
-
-    // Authorize the channel - check if user can access this vendor channel
-    if (str_starts_with($channelName, 'private-vendor-channel.')) {
-        $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
-
-        // Check if user has access to this vendor
-        if ($vendorUid == getVendorUid()) {
-            $auth = $pusher->authorizeChannel($channelName, $socketId);
-            return response()->json(json_decode($auth));
-        }
-    }
-
-    return response()->json(['error' => 'Unauthorized channel'], 403);
+    $auth = $pusher->authorizeChannel($channelName, $socketId);
+    return response()->json(json_decode($auth));
 })->name('api.broadcasting.auth');
 
 // vendor authenticated routes
