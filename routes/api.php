@@ -366,8 +366,32 @@ Route::group(['middleware' => 'guest'], function () {
 Route::group([
     'middleware' => 'app_api.vendor.authenticate',
 ], function () {
-    // broadcast private channel check
-    Broadcast::routes([]);
+    // Custom broadcasting auth for API token authentication
+    Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
+        // User is already authenticated via app_api.vendor.authenticate middleware
+        $pusher = new \Pusher\Pusher(
+            config('broadcasting.connections.pusher.key'),
+            config('broadcasting.connections.pusher.secret'),
+            config('broadcasting.connections.pusher.app_id'),
+            config('broadcasting.connections.pusher.options')
+        );
+
+        $channelName = $request->input('channel_name');
+        $socketId = $request->input('socket_id');
+
+        // Authorize the channel - check if user can access this vendor channel
+        if (str_starts_with($channelName, 'private-vendor-channel.')) {
+            $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
+
+            // Check if user has access to this vendor
+            if ($vendorUid == getVendorUid()) {
+                $auth = $pusher->authorizeChannel($channelName, $socketId);
+                return response()->json(json_decode($auth));
+            }
+        }
+
+        return response()->json(['error' => 'Unauthorized'], 403);
+    })->name('api.broadcasting.auth');
 
     /*
     Media Component Routes Start from here
