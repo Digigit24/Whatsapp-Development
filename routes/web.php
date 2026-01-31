@@ -300,6 +300,12 @@ Route::middleware([
                     'clearOptimize',
                 ])->name('manage.operations.clear_optimize.write');
 
+                // Run server command
+                Route::post('/run-command/{command}', [
+                    ConfigurationController::class,
+                    'runServerCommand',
+                ])->name('manage.configuration.run_command');
+
                 Route::get('/licence-information', [
                     ConfigurationController::class,
                     'registerProductView',

@@ -264,6 +264,13 @@ $currentAppTheme=getUserAppTheme();
                                     {!! __tr('Misc') !!}
                                 </a>
                             </li>
+                            <li class="nav-item {{ request('pageType') == 'server-commands' ? 'active' : '' }}">
+                                <a class="nav-link"
+                                    href="{{ route('manage.configuration.read', ['pageType' => 'server-commands']) }}">
+                                    <i class="fa fa-terminal text-warning"></i>
+                                    {!! __tr('Server Commands') !!}
+                                </a>
+                            </li>
                             <li class="nav-item {{ request('pageType') == 'whatsapp-onboarding' ? 'active' : '' }}">
                                 <a class="nav-link"
                                     href="{{ route('manage.configuration.read', ['pageType' => 'whatsapp-onboarding']) }}">
