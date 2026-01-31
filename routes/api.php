@@ -430,17 +430,13 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         }
     }
 
-    // Method 3: API Key authentication (check Authorization header)
+    // Method 3: API Key authentication (same as existing API middleware)
     if (!$authorized) {
-        $apiKey = $request->header('X-Api-Key') ?? $request->header('Authorization');
+        $apiKey = $request->bearerToken() ?? $request->header('X-Api-Key') ?? $request->input('token');
         if ($apiKey) {
-            $apiKey = str_replace('Bearer ', '', $apiKey);
-            // Check if this API key belongs to the vendor
-            $vendorSettings = \App\Yantrana\Components\Vendor\Models\VendorSettingsModel::where('vendors__id', $vendor->_id)
-                ->where('name', 'vendor_api_access_token')
-                ->where('value', $apiKey)
-                ->first();
-            if ($vendorSettings) {
+            // Use the same helper function as existing API middleware
+            $vendorAccessToken = getVendorSettings('vendor_api_access_token', null, null, $vendorUid);
+            if ($vendorAccessToken && $apiKey === $vendorAccessToken) {
                 $authorized = true;
             }
         }
