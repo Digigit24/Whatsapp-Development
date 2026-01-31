@@ -362,36 +362,52 @@ Route::group(['middleware' => 'guest'], function () {
        
     });
 });
+// Custom broadcasting auth for API token authentication
+// This route MUST be outside app_api.vendor.authenticate middleware to handle Pusher auth format
+Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
+    // Manually verify the token (YesTokenAuth already has special handling for this URL)
+    $isVerified = \YesTokenAuth::verifyToken();
+
+    if ($isVerified['error'] && $isVerified['error'] !== false) {
+        return response()->json(['error' => 'Unauthorized: ' . $isVerified['error']], 403);
+    }
+
+    // Log in the user from the token
+    $userInfo = \App\Yantrana\Components\Auth\Models\AuthModel::where('_id', $isVerified['aud'])->first();
+    if (__isEmpty($userInfo) || $userInfo->status != 1) {
+        return response()->json(['error' => 'User not found or inactive'], 403);
+    }
+    \Auth::loginUsingId($isVerified['aud']);
+
+    // Now create Pusher auth signature
+    $pusher = new \Pusher\Pusher(
+        config('broadcasting.connections.pusher.key'),
+        config('broadcasting.connections.pusher.secret'),
+        config('broadcasting.connections.pusher.app_id'),
+        config('broadcasting.connections.pusher.options')
+    );
+
+    $channelName = $request->input('channel_name');
+    $socketId = $request->input('socket_id');
+
+    // Authorize the channel - check if user can access this vendor channel
+    if (str_starts_with($channelName, 'private-vendor-channel.')) {
+        $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
+
+        // Check if user has access to this vendor
+        if ($vendorUid == getVendorUid()) {
+            $auth = $pusher->authorizeChannel($channelName, $socketId);
+            return response()->json(json_decode($auth));
+        }
+    }
+
+    return response()->json(['error' => 'Unauthorized channel'], 403);
+})->name('api.broadcasting.auth');
+
 // vendor authenticated routes
 Route::group([
     'middleware' => 'app_api.vendor.authenticate',
 ], function () {
-    // Custom broadcasting auth for API token authentication
-    Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
-        // User is already authenticated via app_api.vendor.authenticate middleware
-        $pusher = new \Pusher\Pusher(
-            config('broadcasting.connections.pusher.key'),
-            config('broadcasting.connections.pusher.secret'),
-            config('broadcasting.connections.pusher.app_id'),
-            config('broadcasting.connections.pusher.options')
-        );
-
-        $channelName = $request->input('channel_name');
-        $socketId = $request->input('socket_id');
-
-        // Authorize the channel - check if user can access this vendor channel
-        if (str_starts_with($channelName, 'private-vendor-channel.')) {
-            $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
-
-            // Check if user has access to this vendor
-            if ($vendorUid == getVendorUid()) {
-                $auth = $pusher->authorizeChannel($channelName, $socketId);
-                return response()->json(json_decode($auth));
-            }
-        }
-
-        return response()->json(['error' => 'Unauthorized'], 403);
-    })->name('api.broadcasting.auth');
 
     /*
     Media Component Routes Start from here
