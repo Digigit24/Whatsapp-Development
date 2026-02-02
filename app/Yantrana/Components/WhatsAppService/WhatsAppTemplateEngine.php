@@ -61,6 +61,17 @@ class WhatsAppTemplateEngine extends BaseEngine implements WhatsAppTemplateEngin
     }
 
     /**
+     * Fetch template by UID
+     *
+     * @param string $templateUid
+     * @return mixed
+     */
+    public function fetchTemplateByUid($templateUid)
+    {
+        return $this->whatsAppTemplateRepository->fetchIt($templateUid);
+    }
+
+    /**
      * Templates datatable source
      *
      * @return array

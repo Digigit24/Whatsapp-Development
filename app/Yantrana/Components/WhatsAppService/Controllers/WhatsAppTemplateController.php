@@ -555,7 +555,7 @@ class WhatsAppTemplateController extends BaseController
         // Get vendor ID from request (set by ApiVendorAccessCheckpost middleware)
         $vendorId = request()->get('_vendor_id');
 
-        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+        $template = $this->whatsAppTemplateEngine->fetchTemplateByUid($templateUid);
 
         if (__isEmpty($template)) {
             return processExternalApiResponse([
@@ -680,7 +680,7 @@ class WhatsAppTemplateController extends BaseController
         $vendorId = request()->get('_vendor_id');
 
         // Verify template belongs to vendor
-        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+        $template = $this->whatsAppTemplateEngine->fetchTemplateByUid($templateUid);
         if (__isEmpty($template) || $template->vendors__id !== $vendorId) {
             return processExternalApiResponse([
                 'result' => 'failed',
@@ -769,7 +769,7 @@ class WhatsAppTemplateController extends BaseController
         $vendorId = request()->get('_vendor_id');
 
         // Verify template belongs to vendor
-        $template = $this->whatsAppTemplateEngine->whatsAppTemplateRepository->fetchIt($templateUid);
+        $template = $this->whatsAppTemplateEngine->fetchTemplateByUid($templateUid);
         if (__isEmpty($template) || $template->vendors__id !== $vendorId) {
             return processExternalApiResponse([
                 'result' => 'failed',
