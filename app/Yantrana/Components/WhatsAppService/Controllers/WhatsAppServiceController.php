@@ -1221,6 +1221,8 @@ class WhatsAppServiceController extends BaseController
                 'media_values' => $msg->__data['media_values'] ?? null,
                 'template_data' => $msg->__data['template_data'] ?? null,
                 'template_components' => $msg->__data['template_components'] ?? null,
+                'template_component_values' => $msg->__data['template_component_values'] ?? null,
+                'template_proforma' => $msg->__data['template_proforma'] ?? null,
                 'interaction_message_data' => $msg->__data['interaction_message_data'] ?? null,
                 'is_bot_reply' => $msg->__data['options']['bot_reply'] ?? false,
                 'is_ai_bot_reply' => $msg->__data['options']['ai_bot_reply'] ?? false,
