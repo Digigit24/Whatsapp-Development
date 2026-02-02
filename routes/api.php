@@ -362,6 +362,102 @@ Route::group(['middleware' => 'guest'], function () {
        
     });
 });
+// Custom broadcasting auth for API token authentication
+// Supports both YesTokenAuth tokens AND external JWT tokens
+Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
+    $channelName = $request->input('channel_name');
+    $socketId = $request->input('socket_id');
+    $authToken = $request->input('auth_token') ?? $request->query('auth_token');
+
+    // Extract vendor UID from channel name
+    $vendorUid = null;
+    if (str_starts_with($channelName, 'private-vendor-channel.')) {
+        $vendorUid = str_replace('private-vendor-channel.', '', $channelName);
+    }
+
+    if (!$vendorUid) {
+        return response()->json(['error' => 'Invalid channel format'], 403);
+    }
+
+    // Check if vendor exists
+    $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+    if (!$vendor) {
+        return response()->json(['error' => 'Vendor not found'], 403);
+    }
+
+    $authorized = false;
+
+    // Method 1: Try YesTokenAuth (Laravel encrypted token)
+    if ($authToken && str_starts_with($authToken, 'eyJpd')) {
+        // This looks like a Laravel encrypted token
+        $isVerified = \YesTokenAuth::verifyToken($authToken);
+        if (!$isVerified['error'] || $isVerified['error'] === false) {
+            // Check if user belongs to this vendor
+            $userInfo = \App\Yantrana\Components\Auth\Models\AuthModel::where('_id', $isVerified['aud'])->first();
+            if ($userInfo && $userInfo->vendors__id == $vendor->_id) {
+                $authorized = true;
+            }
+        }
+    }
+
+    // Method 2: Try external JWT (standard format eyJhbGc...)
+    if (!$authorized && $authToken && str_starts_with($authToken, 'eyJhbGc')) {
+        try {
+            // Decode JWT payload (without verification for now - add secret verification in production)
+            $parts = explode('.', $authToken);
+            if (count($parts) === 3) {
+                $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+                // Check if JWT contains vendor access info
+                // Option 1: Check if tenant_id matches vendor (you need to set up this mapping)
+                // Option 2: Check if vendor_uid is in the JWT
+                // Option 3: Check API key header
+
+                if ($payload) {
+                    // For now, check if vendor_uid is passed in JWT or request
+                    $jwtVendorUid = $payload['vendor_uid'] ?? $payload['whatsapp_vendor_uid'] ?? null;
+
+                    if ($jwtVendorUid && $jwtVendorUid === $vendorUid) {
+                        $authorized = true;
+                    }
+
+                    // Alternative: Trust JWT and allow if tenant has API access configured
+                    // You can add your tenant-vendor mapping logic here
+                }
+            }
+        } catch (\Exception $e) {
+            // JWT parsing failed
+        }
+    }
+
+    // Method 3: API Key authentication (same as existing API middleware)
+    if (!$authorized) {
+        $apiKey = $request->bearerToken() ?? $request->header('X-Api-Key') ?? $request->input('token');
+        if ($apiKey) {
+            // Use the same helper function as existing API middleware
+            $vendorAccessToken = getVendorSettings('vendor_api_access_token', null, null, $vendorUid);
+            if ($vendorAccessToken && $apiKey === $vendorAccessToken) {
+                $authorized = true;
+            }
+        }
+    }
+
+    if (!$authorized) {
+        return response()->json(['error' => 'Unauthorized - invalid token or no access to this vendor'], 403);
+    }
+
+    // Create Pusher auth signature
+    $pusher = new \Pusher\Pusher(
+        config('broadcasting.connections.pusher.key'),
+        config('broadcasting.connections.pusher.secret'),
+        config('broadcasting.connections.pusher.app_id'),
+        config('broadcasting.connections.pusher.options')
+    );
+
+    $auth = $pusher->authorizeChannel($channelName, $socketId);
+    return response()->json(json_decode($auth));
+})->name('api.broadcasting.auth');
+
 // vendor authenticated routes
 // Centralized WhatsApp Webhook Route (for React SaaS)
 // Accepts tenant_id as query parameter: /api/whatsapp-webhook?tenant_id={vendorUid}
@@ -373,8 +469,6 @@ Route::any('whatsapp-webhook', [
 Route::group([
     'middleware' => 'app_api.vendor.authenticate',
 ], function () {
-    // broadcast private channel check
-    Broadcast::routes([]);
 
     /*
     Media Component Routes Start from here

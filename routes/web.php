@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use App\Yantrana\Components\Home\Controllers\HomeController;
 use App\Yantrana\Components\Page\Controllers\PageController;
@@ -39,6 +40,68 @@ Route::get('/', [
     HomeController::class,
     'homePageView',
 ])->name('landing_page');
+
+// Public cache clear route for cPanel/shared hosting (no SSH access)
+// Access via: https://yourdomain.com/clear-cache/{secret-key}
+Route::get('/clear-cache/{key}', function ($key) {
+    // Security: Change this secret key to something unique
+    $secretKey = 'your-secret-key-change-this-2024';
+
+    if ($key !== $secretKey) {
+        return response()->json(['error' => 'Invalid key'], 403);
+    }
+
+    try {
+        Artisan::call('optimize:clear');
+        Artisan::call('config:clear');
+        Artisan::call('route:clear');
+        Artisan::call('view:clear');
+        Artisan::call('cache:clear');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'All caches cleared successfully!',
+            'commands_executed' => [
+                'optimize:clear',
+                'config:clear',
+                'route:clear',
+                'view:clear',
+                'cache:clear'
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Diagnostic route to check Pusher/Broadcasting settings
+Route::get('/check-pusher/{key}', function ($key) {
+    $secretKey = 'your-secret-key-change-this-2024';
+
+    if ($key !== $secretKey) {
+        return response()->json(['error' => 'Invalid key'], 403);
+    }
+
+    return response()->json([
+        'database_settings' => [
+            'broadcast_connection_driver' => getAppSettings('broadcast_connection_driver'),
+            'pusher_app_id' => getAppSettings('pusher_app_id') ? '✓ SET (' . getAppSettings('pusher_app_id') . ')' : '✗ NOT SET',
+            'pusher_app_key' => getAppSettings('pusher_app_key') ? '✓ SET' : '✗ NOT SET',
+            'pusher_app_secret' => getAppSettings('pusher_app_secret') ? '✓ SET' : '✗ NOT SET',
+            'pusher_app_cluster' => getAppSettings('pusher_app_cluster') ? '✓ SET (' . getAppSettings('pusher_app_cluster') . ')' : '✗ NOT SET',
+        ],
+        'current_config' => [
+            'broadcasting_default' => config('broadcasting.default'),
+            'pusher_key' => config('broadcasting.connections.pusher.key') ? '✓ SET' : '✗ NOT SET',
+            'pusher_cluster' => config('broadcasting.connections.pusher.options.cluster'),
+        ],
+        'status' => getAppSettings('pusher_app_id') ? 'PUSHER CONFIGURED' : 'PUSHER NOT CONFIGURED',
+    ]);
+});
+
 // user console
 Route::get('/console', function () {
     return hasCentralAccess() ? Redirect::route('central.console') : Redirect::route('vendor.console');
@@ -303,6 +366,12 @@ Route::middleware([
                     ConfigurationController::class,
                     'clearOptimize',
                 ])->name('manage.operations.clear_optimize.write');
+
+                // Run server command
+                Route::post('/run-command/{command}', [
+                    ConfigurationController::class,
+                    'runServerCommand',
+                ])->name('manage.configuration.run_command');
 
                 Route::get('/licence-information', [
                     ConfigurationController::class,

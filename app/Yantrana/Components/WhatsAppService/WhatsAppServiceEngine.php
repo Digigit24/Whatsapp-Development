@@ -3151,6 +3151,21 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
                 null,
                 true // do not create new record if not found
             );
+            // Dispatch webhook for message status update (delivered, read, failed)
+            dispatchVendorWebhook($vendorId, [
+                'contact' => [
+                    'uid' => $contact->_uid,
+                    'phone_number' => $contact->wa_id,
+                    'full_name' => $contact->full_name,
+                ],
+                'message' => [
+                    'uid' => $messageLogEntry->_uid,
+                    'whatsapp_message_id' => $messageWamid,
+                    'status' => $messageStatus,
+                    'messaged_at' => $messageLogEntry->messaged_at?->toIso8601String(),
+                ],
+                'whatsapp_webhook_payload' => $request->all()
+            ], 'message.status');
         }
         // incoming message
         elseif ($messageObject) {

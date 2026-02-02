@@ -158,6 +158,78 @@ class ConfigurationController extends BaseController
     }
 
     /**
+     * Run server command
+     *
+     * @param  BaseRequest  $request
+     * @param  string  $command
+     * @return void
+     *---------------------------------------------------------------- */
+    public function runServerCommand(BaseRequest $request, $command)
+    {
+        // Whitelist of allowed commands for security
+        $allowedCommands = [
+            'optimize-clear' => ['command' => 'optimize:clear', 'message' => 'All caches cleared successfully'],
+            'optimize' => ['command' => 'optimize', 'message' => 'Application optimized successfully'],
+            'cache-clear' => ['command' => 'cache:clear', 'message' => 'Application cache cleared'],
+            'config-clear' => ['command' => 'config:clear', 'message' => 'Configuration cache cleared'],
+            'config-cache' => ['command' => 'config:cache', 'message' => 'Configuration cached successfully'],
+            'route-clear' => ['command' => 'route:clear', 'message' => 'Route cache cleared'],
+            'route-cache' => ['command' => 'route:cache', 'message' => 'Routes cached successfully'],
+            'view-clear' => ['command' => 'view:clear', 'message' => 'Compiled views cleared'],
+            'event-clear' => ['command' => 'event:clear', 'message' => 'Event cache cleared'],
+            'queue-restart' => ['command' => 'queue:restart', 'message' => 'Queue restart signal sent'],
+            'queue-flush' => ['command' => 'queue:flush', 'message' => 'Failed jobs deleted'],
+            'storage-link' => ['command' => 'storage:link', 'message' => 'Storage link created'],
+            'migrate' => ['command' => 'migrate', 'args' => ['--force' => true], 'message' => 'Migrations executed successfully'],
+            'migrate-status' => ['command' => 'migrate:status', 'message' => 'Migration status retrieved'],
+        ];
+
+        // Check if command is allowed
+        if (!isset($allowedCommands[$command])) {
+            return $this->processResponse(2, [
+                2 => __tr('Command not allowed')
+            ], [
+                'show_message' => true,
+                'messageType' => 'error',
+            ], true);
+        }
+
+        $commandConfig = $allowedCommands[$command];
+
+        try {
+            // Run the artisan command
+            $args = $commandConfig['args'] ?? [];
+            $exitCode = Artisan::call($commandConfig['command'], $args);
+            $output = Artisan::output();
+
+            if ($exitCode === 0) {
+                return $this->processResponse(1, [
+                    1 => __tr($commandConfig['message'])
+                ], [
+                    'show_message' => true,
+                    'messageType' => 'success',
+                    'output' => $output,
+                ], true);
+            } else {
+                return $this->processResponse(2, [
+                    2 => __tr('Command failed: ') . $output
+                ], [
+                    'show_message' => true,
+                    'messageType' => 'error',
+                    'output' => $output,
+                ], true);
+            }
+        } catch (\Exception $e) {
+            return $this->processResponse(2, [
+                2 => __tr('Command error: ') . $e->getMessage()
+            ], [
+                'show_message' => true,
+                'messageType' => 'error',
+            ], true);
+        }
+    }
+
+    /**
      * Register view
      *
      * @return void

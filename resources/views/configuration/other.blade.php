@@ -212,12 +212,12 @@
             <div class="alert alert-dark" x-show="broadcastConnectionDriver == 'soketi'">
                 {{  __tr('For more information visit:') }} <a href="https://docs.soketi.app" class="float-right" target="_blank">{{  __tr('More information about Soketi') }}</a>
             </div>
-               <x-lw.input-field type="text" id="lwPusherAppId" data-form-group-class="" :label="__tr('App ID')" name="pusher_app_id" required="true" />
-               <x-lw.input-field type="text" id="lwPusherKey" data-form-group-class="" :label="__tr('App Key')" name="pusher_app_key" required="true" />
-               <x-lw.input-field type="text" id="lwPusherAppSecret" data-form-group-class="" :label="__tr('App Secret')" name="pusher_app_secret" required="true" />
-               <template x-if="broadcastConnectionDriver == 'pusher'">
-                <x-lw.input-field type="text" id="lwPusherAppCluster" data-form-group-class="" :label="__tr('App Cluster')" name="pusher_app_cluster" required="true" />
-               </template>
+               <x-lw.input-field type="text" id="lwPusherAppId" data-form-group-class="" value="{{ getAppSettings('pusher_app_id') }}" :label="__tr('App ID')" name="pusher_app_id" required="true" />
+               <x-lw.input-field type="text" id="lwPusherKey" data-form-group-class="" value="{{ getAppSettings('pusher_app_key') }}" :label="__tr('App Key')" name="pusher_app_key" required="true" />
+               <x-lw.input-field type="text" id="lwPusherAppSecret" data-form-group-class="" value="{{ getAppSettings('pusher_app_secret') }}" :label="__tr('App Secret')" name="pusher_app_secret" required="true" />
+               <div x-show="broadcastConnectionDriver == 'pusher'">
+                <x-lw.input-field type="text" id="lwPusherAppCluster" data-form-group-class="" value="{{ getAppSettings('pusher_app_cluster') }}" :label="__tr('App Cluster')" name="pusher_app_cluster" required="true" />
+               </div>
                {{-- soketi specific --}}
                <template x-if="broadcastConnectionDriver == 'soketi'">
                 <div>

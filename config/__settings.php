@@ -548,8 +548,8 @@ return [
                 'key' => 'pusher_app_id',
                 'data_type' => 1,     // string
                 'default' => '',
-                'hide_value' => true,
-                'ignore_empty' => true,
+                'hide_value' => false,
+                'ignore_empty' => false,
                 'validation_rules' => [
                     'required',
                 ],
@@ -558,8 +558,8 @@ return [
                 'key' => 'pusher_app_key',
                 'data_type' => 1,     // string
                 'default' => '',
-                'hide_value' => true,
-                'ignore_empty' => true,
+                'hide_value' => false,
+                'ignore_empty' => false,
                 'validation_rules' => [
                     'required',
                 ],
@@ -568,8 +568,8 @@ return [
                 'key' => 'pusher_app_secret',
                 'data_type' => 1,     // string
                 'default' => '',
-                'hide_value' => true,
-                'ignore_empty' => true,
+                'hide_value' => false,
+                'ignore_empty' => false,
                 'validation_rules' => [
                     'required',
                 ],
@@ -578,8 +578,8 @@ return [
                 'key' => 'pusher_app_cluster',
                 'data_type' => 1,     // string
                 'default' => '',
-                'hide_value' => true,
-                'ignore_empty' => true,
+                'hide_value' => false,
+                'ignore_empty' => false,
                 'validation_rules' => [
                     'required',
                 ],
