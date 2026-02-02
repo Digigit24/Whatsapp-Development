@@ -1457,4 +1457,104 @@ Route::post('yoomoney/yoomoney-webhook-order-payment', [
     'handleOrderPaymentYoomoneyWebhook'
 ])->name('yoomoney-webhook');
 
+// ============================================================
+// TEMPORARY DEBUG ROUTES - DELETE AFTER TESTING
+// Secret key for security: change this to your own secret
+// ============================================================
+Route::prefix('debug-tools/{secret}')->group(function () {
+
+    // Check pending webhooks count
+    // URL: /debug-tools/YOUR_SECRET/pending-webhooks
+    Route::get('/pending-webhooks', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        $pending = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppWebhookModel::where('status', 'pending')->count();
+        $failed = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppWebhookModel::where('status', 'failed')->count();
+        return response()->json([
+            'pending_webhooks' => $pending,
+            'failed_webhooks' => $failed,
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    });
+
+    // Process pending webhooks
+    // URL: /debug-tools/YOUR_SECRET/process-webhooks
+    Route::get('/process-webhooks', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        \Artisan::call('whatsapp:webhooks:process', ['webhooksCount' => 25]);
+        $output = \Artisan::output();
+        $pending = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppWebhookModel::where('status', 'pending')->count();
+        return response()->json([
+            'message' => 'Webhooks processed',
+            'output' => $output,
+            'remaining_pending' => $pending,
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    });
+
+    // Test Pusher broadcast event
+    // URL: /debug-tools/YOUR_SECRET/test-pusher/VENDOR_UID
+    Route::get('/test-pusher/{vendorUid}', function ($secret, $vendorUid) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        try {
+            event(new \App\Events\VendorChannelBroadcast($vendorUid, [
+                'test' => true,
+                'message' => 'Pusher test event',
+                'timestamp' => now()->toDateTimeString()
+            ]));
+            return response()->json([
+                'success' => true,
+                'message' => 'Pusher event dispatched to vendor: ' . $vendorUid,
+                'channel' => 'private-vendor-channel.' . $vendorUid,
+                'timestamp' => now()->toDateTimeString()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    });
+
+    // Run queue work (process one batch)
+    // URL: /debug-tools/YOUR_SECRET/run-queue
+    Route::get('/run-queue', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        \Artisan::call('queue:work', ['--stop-when-empty' => true, '--max-time' => 30]);
+        $output = \Artisan::output();
+        return response()->json([
+            'message' => 'Queue processed',
+            'output' => $output,
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    });
+
+    // Check system status
+    // URL: /debug-tools/YOUR_SECRET/status
+    Route::get('/status', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        return response()->json([
+            'broadcast_driver' => config('broadcasting.default'),
+            'pusher_key' => config('broadcasting.connections.pusher.key') ? 'SET' : 'NOT SET',
+            'pusher_cluster' => config('broadcasting.connections.pusher.options.cluster'),
+            'queue_connection' => config('queue.default'),
+            'enable_wa_webhook_process_using_db' => getAppSettings('enable_wa_webhook_process_using_db'),
+            'enable_queue_jobs_for_campaigns' => getAppSettings('enable_queue_jobs_for_campaigns'),
+            'pending_webhooks' => \App\Yantrana\Components\WhatsAppService\Models\WhatsAppWebhookModel::where('status', 'pending')->count(),
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    });
+});
+// ============================================================
+// END TEMPORARY DEBUG ROUTES
+// ============================================================
 
