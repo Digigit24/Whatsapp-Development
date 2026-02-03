@@ -1771,6 +1771,98 @@ Route::prefix('debug-tools/{secret}')->group(function () {
             ], 500);
         }
     });
+    // Test API middleware flow
+    // URL: /debug-tools/YOUR_SECRET/test-middleware/VENDOR_UID?token=YOUR_TOKEN
+    Route::get('/test-middleware/{vendorUid}', function ($secret, $vendorUid) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+
+        $steps = [];
+        try {
+            $token = request()->get('token');
+            $steps[] = "Token provided: " . ($token ? 'Yes (' . substr($token, 0, 10) . '...)' : 'No');
+            $steps[] = "Vendor UID: " . $vendorUid;
+
+            // Step 1: Get vendor access token
+            $steps[] = "Getting vendor access token...";
+            $vendorAccessToken = getVendorSettings('vendor_api_access_token', null, null, $vendorUid);
+            $steps[] = "Vendor access token: " . ($vendorAccessToken ? substr($vendorAccessToken, 0, 10) . '...' : 'NOT SET');
+
+            // Step 2: Compare tokens
+            $steps[] = "Comparing tokens...";
+            $tokensMatch = ($token === $vendorAccessToken);
+            $steps[] = "Tokens match: " . ($tokensMatch ? 'Yes' : 'No');
+
+            if (!$tokensMatch) {
+                return response()->json([
+                    'success' => false,
+                    'steps' => $steps,
+                    'error' => 'Token mismatch',
+                    'provided_token_length' => strlen($token ?? ''),
+                    'expected_token_length' => strlen($vendorAccessToken ?? ''),
+                ]);
+            }
+
+            // Step 3: Get vendor
+            $steps[] = "Getting vendor...";
+            $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+            if (!$vendor) {
+                return response()->json([
+                    'success' => false,
+                    'steps' => $steps,
+                    'error' => 'Vendor not found'
+                ]);
+            }
+            $steps[] = "Vendor found: " . $vendor->title . " (ID: " . $vendor->_id . ")";
+
+            // Step 4: Get vendor admin
+            $steps[] = "Getting vendor admin...";
+            $vendorAdmin = \App\Yantrana\Components\Auth\Models\AuthModel::where('vendors__id', $vendor->_id)->first();
+            if (!$vendorAdmin) {
+                return response()->json([
+                    'success' => false,
+                    'steps' => $steps,
+                    'error' => 'Vendor admin not found'
+                ]);
+            }
+            $steps[] = "Vendor admin found: " . $vendorAdmin->first_name . " (ID: " . $vendorAdmin->_id . ")";
+
+            // Step 5: Try to login
+            $steps[] = "Attempting Auth::loginUsingId...";
+            \Illuminate\Support\Facades\Auth::loginUsingId($vendorAdmin->_id);
+            $steps[] = "Login successful, current user ID: " . (\Illuminate\Support\Facades\Auth::id() ?? 'null');
+
+            // Step 6: Try calling the controller method
+            $steps[] = "Instantiating controller...";
+            $controller = app(\App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceController::class);
+            $steps[] = "Controller instantiated";
+
+            // Simulate setting vendor_id in request
+            request()->merge(['_vendor_id' => $vendor->_id]);
+            $steps[] = "_vendor_id set in request: " . request()->get('_vendor_id');
+
+            // Call the method
+            $steps[] = "Calling apiGetChatContacts...";
+            $response = $controller->apiGetChatContacts($vendorUid);
+            $steps[] = "Method returned successfully";
+
+            return response()->json([
+                'success' => true,
+                'steps' => $steps,
+                'response_type' => get_class($response),
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'steps' => $steps,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ], 500);
+        }
+    });
 });
 // ============================================================
 // END TEMPORARY DEBUG ROUTES
