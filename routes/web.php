@@ -1593,6 +1593,58 @@ Route::prefix('debug-tools/{secret}')->group(function () {
             'messages' => $result
         ]);
     });
+
+    // Clear all cache
+    // URL: /debug-tools/YOUR_SECRET/clear-cache
+    Route::get('/clear-cache', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        \Artisan::call('config:clear');
+        \Artisan::call('cache:clear');
+        \Artisan::call('view:clear');
+        \Artisan::call('route:clear');
+        return response()->json([
+            'message' => 'All caches cleared',
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    });
+
+    // Test chat contacts API
+    // URL: /debug-tools/YOUR_SECRET/test-contacts/VENDOR_UID
+    Route::get('/test-contacts/{vendorUid}', function ($secret, $vendorUid) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        try {
+            $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+            if (!$vendor) {
+                return response()->json(['error' => 'Vendor not found'], 404);
+            }
+
+            $contacts = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendor->_id)
+                ->has('lastIncomingMessage')
+                ->with(['lastMessage'])
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'vendor' => $vendor->title,
+                'contacts_count' => $contacts->count(),
+                'contacts' => $contacts->map(fn($c) => [
+                    '_uid' => $c->_uid,
+                    'name' => $c->full_name,
+                    'wa_id' => $c->wa_id,
+                ])
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
+    });
 });
 // ============================================================
 // END TEMPORARY DEBUG ROUTES
