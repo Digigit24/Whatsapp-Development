@@ -1553,6 +1553,46 @@ Route::prefix('debug-tools/{secret}')->group(function () {
             'timestamp' => now()->toDateTimeString()
         ]);
     });
+
+    // Check raw message data for a contact
+    // URL: /debug-tools/YOUR_SECRET/messages/CONTACT_UID
+    Route::get('/messages/{contactUid}', function ($secret, $contactUid) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where('_uid', $contactUid)->first();
+        if (!$contact) {
+            return response()->json(['error' => 'Contact not found'], 404);
+        }
+
+        $messages = \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::where('contacts__id', $contact->_id)
+            ->orderByDesc('messaged_at')
+            ->limit(10)
+            ->get();
+
+        $result = $messages->map(function ($msg) {
+            return [
+                '_uid' => $msg->_uid,
+                'message' => $msg->message,
+                'is_incoming' => $msg->is_incoming_message,
+                'status' => $msg->status,
+                'messaged_at' => $msg->messaged_at?->toDateTimeString(),
+                '__data_keys' => array_keys($msg->__data ?? []),
+                'has_template_proforma' => isset($msg->__data['template_proforma']),
+                'has_template_components' => isset($msg->__data['template_components']),
+                'has_template_component_values' => isset($msg->__data['template_component_values']),
+                'template_name' => $msg->__data['template_proforma']['name'] ?? null,
+                'raw__data' => $msg->__data,
+            ];
+        });
+
+        return response()->json([
+            'contact' => $contact->full_name,
+            'contact_uid' => $contact->_uid,
+            'total_messages' => $messages->count(),
+            'messages' => $result
+        ]);
+    });
 });
 // ============================================================
 // END TEMPORARY DEBUG ROUTES
