@@ -1645,6 +1645,132 @@ Route::prefix('debug-tools/{secret}')->group(function () {
             ], 500);
         }
     });
+
+    // FULL API test - simulates apiGetChatContacts exactly
+    // URL: /debug-tools/YOUR_SECRET/full-api-test/VENDOR_UID
+    Route::get('/full-api-test/{vendorUid}', function ($secret, $vendorUid) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+
+        $errors = [];
+        $steps = [];
+
+        try {
+            // Step 1: Get vendor
+            $steps[] = 'Getting vendor...';
+            $vendor = \App\Yantrana\Components\Vendor\Models\VendorModel::where('_uid', $vendorUid)->first();
+            if (!$vendor) {
+                return response()->json(['error' => 'Vendor not found'], 404);
+            }
+            $steps[] = 'Vendor found: ' . $vendor->title;
+            $vendorId = $vendor->_id;
+
+            // Step 2: Build query (like apiGetChatContacts)
+            $steps[] = 'Building query...';
+            $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+                ->has('lastIncomingMessage')
+                ->with(['lastMessage', 'lastIncomingMessage', 'labels', 'assignedUser'])
+                ->withCount(['unreadMessages']);
+            $steps[] = 'Query built';
+
+            // Step 3: Order by (like apiGetChatContacts)
+            $steps[] = 'Adding order by...';
+            $query->orderByDesc(
+                \App\Yantrana\Components\WhatsAppService\Models\WhatsAppMessageLogModel::select('messaged_at')
+                    ->whereColumn('contacts__id', 'contacts._id')
+                    ->orderByDesc('messaged_at')
+                    ->limit(1)
+            );
+            $steps[] = 'Order by added';
+
+            // Step 4: Paginate
+            $steps[] = 'Paginating...';
+            $contacts = $query->paginate(20, ['*'], 'page', 1);
+            $steps[] = 'Paginated: ' . $contacts->count() . ' contacts';
+
+            // Step 5: Map contacts (like apiGetChatContacts)
+            $steps[] = 'Mapping contacts...';
+            $contactData = $contacts->map(function ($contact) use (&$steps) {
+                // Calculate reply window status
+                $lastIncoming = $contact->lastIncomingMessage;
+                $steps[] = 'Processing contact: ' . $contact->_uid;
+
+                $isReplyWindowOpen = $lastIncoming && $lastIncoming->messaged_at->diffInHours(now()) < 24;
+                $replyWindowExpiresAt = $lastIncoming ? $lastIncoming->messaged_at->addHours(24) : null;
+
+                return [
+                    '_uid' => $contact->_uid,
+                    '_id' => $contact->_id,
+                    'first_name' => $contact->first_name,
+                    'last_name' => $contact->last_name,
+                    'full_name' => $contact->full_name,
+                    'name_initials' => $contact->name_initials,
+                    'wa_id' => $contact->wa_id,
+                    'email' => $contact->email,
+                    'language_code' => $contact->language_code,
+                    'country_code' => $contact->countries__id,
+                    'unread_messages_count' => $contact->unread_messages_count ?? 0,
+                    'is_blocked' => !empty($contact->wa_blocked_at),
+                    'wa_blocked_at' => $contact->wa_blocked_at,
+                    'disable_ai_bot' => (bool) $contact->disable_ai_bot,
+                    'disable_reply_bot' => (bool) $contact->disable_reply_bot,
+                    'is_reply_window_open' => $isReplyWindowOpen,
+                    'reply_window_expires_at' => $replyWindowExpiresAt?->toIso8601String(),
+                    'reply_window_expires_human' => $replyWindowExpiresAt?->diffForHumans(['parts' => 2, 'join' => true]),
+                    'last_message' => $contact->lastMessage ? [
+                        '_uid' => $contact->lastMessage->_uid,
+                        'message' => $contact->lastMessage->message,
+                        'is_incoming_message' => (bool) $contact->lastMessage->is_incoming_message,
+                        'status' => $contact->lastMessage->status,
+                        'messaged_at' => $contact->lastMessage->messaged_at?->toIso8601String(),
+                        'formatted_message_ago_time' => $contact->lastMessage->formatted_message_ago_time,
+                    ] : null,
+                    'labels' => $contact->labels ? $contact->labels->map(fn($l) => [
+                        '_id' => $l->_id,
+                        '_uid' => $l->_uid,
+                        'title' => $l->title,
+                        'text_color' => $l->text_color,
+                        'bg_color' => $l->bg_color,
+                    ])->toArray() : [],
+                    'assigned_user' => $contact->assignedUser ? [
+                        '_id' => $contact->assignedUser->_id,
+                        '_uid' => $contact->assignedUser->_uid,
+                        'first_name' => $contact->assignedUser->first_name,
+                        'last_name' => $contact->assignedUser->last_name,
+                    ] : null,
+                ];
+            });
+            $steps[] = 'Mapping complete';
+
+            return response()->json([
+                'success' => true,
+                'steps' => $steps,
+                'pagination' => [
+                    'current_page' => $contacts->currentPage(),
+                    'total' => $contacts->total(),
+                    'per_page' => $contacts->perPage(),
+                    'last_page' => $contacts->lastPage(),
+                ],
+                'data_count' => $contactData->count(),
+                'data' => $contactData,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'steps_completed' => $steps,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => collect($e->getTrace())->take(5)->map(fn($t) => [
+                    'file' => $t['file'] ?? 'N/A',
+                    'line' => $t['line'] ?? 'N/A',
+                    'function' => $t['function'] ?? 'N/A',
+                ])->toArray()
+            ], 500);
+        }
+    });
 });
 // ============================================================
 // END TEMPORARY DEBUG ROUTES
