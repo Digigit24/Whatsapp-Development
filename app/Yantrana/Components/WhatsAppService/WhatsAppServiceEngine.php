@@ -1895,12 +1895,25 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
             ],
         ]);
         if (($messageResponseStatus == 'accepted') or ($messageResponseStatus == 'held_for_quality_assessment')) {
+            $contact = $this->contactRepository->fetchIt($contactUid);
+
+            // Dispatch broadcast event for external apps (React)
+            event(new VendorChannelBroadcast(getPublicVendorUid($vendorId), [
+                'contactUid' => $contactUid,
+                'contactWaId' => $contactWhatsappNumber,
+                'isNewIncomingMessage' => false,
+                'lastMessageUid' => $recordCreated->_uid,
+                'message_status' => $messageResponseStatus,
+                'formatted_last_message_time' => $recordCreated->formatted_message_time ?? null,
+                'contactDescription' => ($contact->full_name ?? $contactWhatsappNumber),
+            ]));
+
             return $this->engineSuccessResponse(
                 [
                     'messageUid' => $recordCreated->_uid,
                     'contactUid' => $contactUid,
                     'log_message' => $recordCreated,
-                    'contact' => $this->contactRepository->fetchIt($contactUid),
+                    'contact' => $contact,
                 ],
                 // response message
                 ($messageResponseStatus == 'held_for_quality_assessment')
@@ -2485,6 +2498,19 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
         updateClientModels([
             'whatsappMessageLogs' => $this->contactChatData($contact->_id)->data('whatsappMessageLogs'),
         ], 'prepend');
+
+        // Dispatch broadcast event for external apps (React)
+        if ($logMessage) {
+            event(new VendorChannelBroadcast(getPublicVendorUid($vendorId), [
+                'contactUid' => $contact->_uid,
+                'contactWaId' => $contact->wa_id,
+                'isNewIncomingMessage' => false,
+                'lastMessageUid' => $logMessage->_uid,
+                'message_status' => $logMessage->status,
+                'formatted_last_message_time' => $logMessage->formatted_message_time ?? null,
+                'contactDescription' => ($contact->full_name ?: $contact->wa_id),
+            ]));
+        }
 
         return $this->engineSuccessResponse([
             'contact' => $contact,
