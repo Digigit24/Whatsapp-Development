@@ -1037,15 +1037,29 @@ class WhatsAppServiceController extends BaseController
      */
     public function apiGetChatContacts($vendorUid)
     {
-        $vendorId = request()->get('_vendor_id');
-        $assigned = request()->get('assigned'); // 'to-me', 'unassigned', user_id, or null for all
-        $search = request()->get('search');
-        $unreadOnly = request()->get('unread_only', false);
-        $labelId = request()->get('label_id');
-        $page = request()->get('page', 1);
-        $limit = request()->get('limit', 20);
+        try {
+            $vendorId = request()->get('_vendor_id');
+            $assigned = request()->get('assigned'); // 'to-me', 'unassigned', user_id, or null for all
+            $search = request()->get('search');
+            $unreadOnly = request()->get('unread_only', false);
+            $labelId = request()->get('label_id');
+            $page = request()->get('page', 1);
+            $limit = request()->get('limit', 20);
 
-        $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
+            // Debug: If vendor_id is not set, return error with details
+            if (!$vendorId) {
+                return processExternalApiResponse([
+                    'result' => 'failed',
+                    'message' => 'Vendor ID not found in request. Middleware may have failed.',
+                    'debug' => [
+                        'vendorUid' => $vendorUid,
+                        'has_bearer_token' => !empty(request()->bearerToken()),
+                        'request_keys' => array_keys(request()->all()),
+                    ]
+                ]);
+            }
+
+            $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId)
             ->has('lastIncomingMessage')
             ->with(['lastMessage', 'lastIncomingMessage', 'labels', 'assignedUser'])
             ->withCount(['unreadMessages']);
@@ -1141,19 +1155,28 @@ class WhatsAppServiceController extends BaseController
             ];
         });
 
-        return processExternalApiResponse([
-            'result' => 'success',
-            'message' => __tr('Chat contacts fetched successfully'),
-        ], [
-            'contacts' => $contactData,
-            'pagination' => [
-                'current_page' => $contacts->currentPage(),
-                'last_page' => $contacts->lastPage(),
-                'per_page' => $contacts->perPage(),
-                'total' => $contacts->total(),
-                'has_more' => $contacts->hasMorePages(),
-            ]
-        ]);
+            return processExternalApiResponse([
+                'result' => 'success',
+                'message' => __tr('Chat contacts fetched successfully'),
+            ], [
+                'contacts' => $contactData,
+                'pagination' => [
+                    'current_page' => $contacts->currentPage(),
+                    'last_page' => $contacts->lastPage(),
+                    'per_page' => $contacts->perPage(),
+                    'total' => $contacts->total(),
+                    'has_more' => $contacts->hasMorePages(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => 'An error occurred while fetching contacts',
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+        }
     }
 
     /**
