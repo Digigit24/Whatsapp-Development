@@ -1436,6 +1436,89 @@ class WhatsAppServiceController extends BaseController
     }
 
     /**
+     * API: Upload media file - External API
+     *
+     * @param string $vendorUid
+     * @return json
+     */
+    public function apiUploadMedia($vendorUid)
+    {
+        $vendorId = request()->get('_vendor_id');
+
+        if (!request()->hasFile('file')) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('No file uploaded'),
+            ]);
+        }
+
+        $file = request()->file('file');
+        $allowedMimes = [
+            'image/jpeg', 'image/png', 'image/webp',
+            'video/mp4', 'video/3gpp',
+            'audio/mpeg', 'audio/ogg', 'audio/amr', 'audio/mp4',
+            'application/pdf', 'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain'
+        ];
+
+        if (!in_array($file->getMimeType(), $allowedMimes)) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('File type not allowed'),
+            ]);
+        }
+
+        // Max 16MB for media
+        if ($file->getSize() > 16 * 1024 * 1024) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('File size exceeds 16MB limit'),
+            ]);
+        }
+
+        // Generate unique filename
+        $extension = $file->getClientOriginalExtension();
+        $filename = uniqid('media_') . '_' . time() . '.' . $extension;
+
+        // Store in public storage
+        $path = $file->storeAs('media-storage/whatsapp/' . $vendorId, $filename, 'public');
+
+        if (!$path) {
+            return processExternalApiResponse([
+                'result' => 'failed',
+                'message' => __tr('Failed to upload file'),
+            ]);
+        }
+
+        // Get media type
+        $mimeType = $file->getMimeType();
+        $mediaType = 'document';
+        if (str_starts_with($mimeType, 'image/')) {
+            $mediaType = 'image';
+        } elseif (str_starts_with($mimeType, 'video/')) {
+            $mediaType = 'video';
+        } elseif (str_starts_with($mimeType, 'audio/')) {
+            $mediaType = 'audio';
+        }
+
+        $publicUrl = url('storage/' . $path);
+
+        return processExternalApiResponse([
+            'result' => 'success',
+            'message' => __tr('File uploaded successfully'),
+        ], [
+            'media_url' => $publicUrl,
+            'media_type' => $mediaType,
+            'file_name' => $file->getClientOriginalName(),
+            'file_size' => $file->getSize(),
+            'mime_type' => $mimeType,
+        ]);
+    }
+
+    /**
      * API: Send template message to contact - External API
      *
      * @param string $vendorUid

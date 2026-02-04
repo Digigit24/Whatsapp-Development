@@ -261,6 +261,11 @@ Route::group([
         WhatsAppServiceController::class,
         'apiSendTemplateMessage',
     ])->name('api.vendor.contact.messages.send_template');
+    // Upload media file
+    Route::post('/media/upload', [
+        WhatsAppServiceController::class,
+        'apiUploadMedia',
+    ])->name('api.vendor.media.upload');
     // Mark messages as read
     Route::post('/contacts/{contactUid}/messages/read', [
         WhatsAppServiceController::class,
