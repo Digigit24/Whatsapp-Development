@@ -1886,6 +1886,7 @@ class WhatsAppServiceEngine extends BaseEngine implements WhatsAppServiceEngineI
             'is_incoming_message' => 0,
             'contact_wa_id' => Arr::get($sendMessageResult, 'contacts.0.wa_id'),
             'wamid' => Arr::get($sendMessageResult, 'messages.0.id'),
+            'messaged_at' => now(),
             '__data' => [
                 'contact_data' => $contactsData,
                 'initial_response' => $sendMessageResult,
