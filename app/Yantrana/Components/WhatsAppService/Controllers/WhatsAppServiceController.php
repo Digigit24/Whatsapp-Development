@@ -1218,11 +1218,24 @@ class WhatsAppServiceController extends BaseController
             ->orderByDesc('messaged_at')
             ->paginate($limit, ['*'], 'page', $page);
 
-        $messageData = $messages->map(function ($msg) {
+        $messageData = $messages->map(function ($msg) use ($vendorUid) {
             // Compile template message if needed
             $templateMessage = null;
             if (!$msg->message || isset($msg->__data['interaction_message_data'])) {
                 $templateMessage = $this->whatsAppServiceEngine->compileMessageForApi($msg->__data);
+            }
+
+            // Rewrite media URLs to go through Laravel route for CORS support
+            $mediaValues = $msg->__data['media_values'] ?? null;
+            if ($mediaValues && isset($mediaValues['link'])) {
+                $originalUrl = $mediaValues['link'];
+                // Extract path from URL (remove domain)
+                $parsedUrl = parse_url($originalUrl);
+                $path = $parsedUrl['path'] ?? '';
+                // Remove leading slash
+                $path = ltrim($path, '/');
+                // Generate new URL through Laravel route
+                $mediaValues['link'] = url("api/{$vendorUid}/media/{$path}");
             }
 
             return [
@@ -1241,7 +1254,7 @@ class WhatsAppServiceController extends BaseController
                 'campaigns__id' => $msg->campaigns__id,
                 'template_message' => $templateMessage,
                 'message_type' => $msg->__data['message_type'] ?? 'text',
-                'media_values' => $msg->__data['media_values'] ?? null,
+                'media_values' => $mediaValues,
                 'template_data' => $msg->__data['template_data'] ?? null,
                 'template_components' => $msg->__data['template_components'] ?? null,
                 'template_component_values' => $msg->__data['template_component_values'] ?? null,
