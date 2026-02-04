@@ -266,6 +266,11 @@ Route::group([
         WhatsAppServiceController::class,
         'apiUploadMedia',
     ])->name('api.vendor.media.upload');
+    // Serve media file with CORS
+    Route::get('/media/{filename}', [
+        WhatsAppServiceController::class,
+        'apiServeMedia',
+    ])->name('api.vendor.media.serve')->where('filename', '.*');
     // Mark messages as read
     Route::post('/contacts/{contactUid}/messages/read', [
         WhatsAppServiceController::class,

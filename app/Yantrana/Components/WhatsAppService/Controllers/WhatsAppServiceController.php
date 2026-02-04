@@ -1505,7 +1505,8 @@ class WhatsAppServiceController extends BaseController
             $mediaType = 'audio';
         }
 
-        $publicUrl = url($path);
+        // Generate URL through Laravel route for CORS support
+        $publicUrl = url("api/{$vendorUid}/media/{$path}");
 
         return processExternalApiResponse([
             'result' => 'success',
@@ -1516,6 +1517,34 @@ class WhatsAppServiceController extends BaseController
             'file_name' => $file->getClientOriginalName(),
             'file_size' => $file->getSize(),
             'mime_type' => $mimeType,
+        ]);
+    }
+
+    /**
+     * API: Serve media file with CORS headers - External API
+     *
+     * @param string $vendorUid
+     * @param string $filename
+     * @return Response
+     */
+    public function apiServeMedia($vendorUid, $filename)
+    {
+        $filePath = public_path($filename);
+
+        if (!file_exists($filePath)) {
+            return response()->json([
+                'result' => 'failed',
+                'message' => 'File not found',
+            ], 404);
+        }
+
+        $mimeType = mime_content_type($filePath);
+
+        return response()->file($filePath, [
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization',
+            'Content-Type' => $mimeType,
         ]);
     }
 
