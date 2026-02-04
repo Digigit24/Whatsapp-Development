@@ -89,7 +89,7 @@ class WhatsAppMessageLogRepository extends BaseRepository implements WhatsAppMes
         } else {
             $dataToUpdate['status'] = $messageStatus;
         }
-        if ($timestamp and ($messageStatus == 'delivered')) {
+        if ($timestamp and ($messageStatus == 'delivered') and (!$messageLogModel || !$messageLogModel->messaged_at)) {
             $dataToUpdate['messaged_at'] = Carbon::createFromTimestamp($timestamp);
         }
         if ($message || $mediaData) {
