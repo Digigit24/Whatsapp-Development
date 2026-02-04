@@ -1483,8 +1483,9 @@ class WhatsAppServiceController extends BaseController
         $extension = $file->getClientOriginalExtension();
         $filename = uniqid('media_') . '_' . time() . '.' . $extension;
 
-        // Store in public storage
-        $path = $file->storeAs('media-storage/whatsapp/' . $vendorId, $filename, 'public');
+        // Store in public-media-storage (root is public_path)
+        $storagePath = 'media-storage/vendors/' . $vendorUid . '/api-uploads';
+        $path = $file->storeAs($storagePath, $filename, 'public-media-storage');
 
         if (!$path) {
             return processExternalApiResponse([
@@ -1504,7 +1505,7 @@ class WhatsAppServiceController extends BaseController
             $mediaType = 'audio';
         }
 
-        $publicUrl = url('storage/' . $path);
+        $publicUrl = url($path);
 
         return processExternalApiResponse([
             'result' => 'success',
