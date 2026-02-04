@@ -1229,13 +1229,16 @@ class WhatsAppServiceController extends BaseController
             $mediaValues = $msg->__data['media_values'] ?? null;
             if ($mediaValues && isset($mediaValues['link'])) {
                 $originalUrl = $mediaValues['link'];
-                // Extract path from URL (remove domain)
-                $parsedUrl = parse_url($originalUrl);
-                $path = $parsedUrl['path'] ?? '';
-                // Remove leading slash
-                $path = ltrim($path, '/');
-                // Generate new URL through Laravel route
-                $mediaValues['link'] = url("api/{$vendorUid}/media/{$path}");
+                // Skip if already using Laravel media route
+                if (strpos($originalUrl, "/api/{$vendorUid}/media/") === false) {
+                    // Extract path from URL (remove domain)
+                    $parsedUrl = parse_url($originalUrl);
+                    $path = $parsedUrl['path'] ?? '';
+                    // Remove leading slash
+                    $path = ltrim($path, '/');
+                    // Generate new URL through Laravel route
+                    $mediaValues['link'] = url("api/{$vendorUid}/media/{$path}");
+                }
             }
 
             return [
