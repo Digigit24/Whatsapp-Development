@@ -746,16 +746,26 @@ class ContactController extends BaseController
     {
         $vendorId = request()->get('_vendor_id');
 
-        $contact = \App\Yantrana\Components\Contact\Models\ContactModel::where([
-            '_uid' => $contactUid,
-            'vendors__id' => $vendorId,
-        ])->with(['country', 'groups', 'labels'])->first();
+        // Check if contactUid is a UUID or phone number
+        $isUuid = preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $contactUid);
+
+        $query = \App\Yantrana\Components\Contact\Models\ContactModel::where('vendors__id', $vendorId);
+
+        if ($isUuid) {
+            $query->where('_uid', $contactUid);
+        } else {
+            // Treat as phone number - search by wa_id
+            $query->where('wa_id', $contactUid);
+        }
+
+        $contact = $query->with(['country', 'groups', 'labels'])->first();
 
         if (__isEmpty($contact)) {
-            return processExternalApiResponse([
+            return response()->json([
                 'result' => 'failed',
                 'message' => __tr('Contact not found'),
-            ]);
+                'data' => [],
+            ], 404);
         }
 
         return processExternalApiResponse([
