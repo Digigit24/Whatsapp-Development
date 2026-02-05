@@ -1634,6 +1634,97 @@ Route::prefix('debug-tools/{secret}')->group(function () {
         }
     });
 
+    // Check migration status and create scheduling tables directly
+    // URL: /debug-tools/YOUR_SECRET/create-scheduling-tables
+    Route::get('/create-scheduling-tables', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        try {
+            $results = [];
+
+            // Check if tables exist
+            $tables = ['event_reminder_configs', 'scheduled_events', 'scheduled_messages'];
+            foreach ($tables as $table) {
+                $results[$table] = \Illuminate\Support\Facades\Schema::hasTable($table) ? 'EXISTS' : 'MISSING';
+            }
+
+            // Create tables if missing
+            if ($results['event_reminder_configs'] === 'MISSING') {
+                \Illuminate\Support\Facades\Schema::create('event_reminder_configs', function ($table) {
+                    $table->id('_id');
+                    $table->uuid('_uid')->unique();
+                    $table->string('event_type', 100)->index();
+                    $table->integer('reminder_offset_minutes');
+                    $table->string('template_name', 255);
+                    $table->string('template_language', 10)->default('en');
+                    $table->unsignedBigInteger('vendors__id')->nullable()->index();
+                    $table->boolean('is_active')->default(true);
+                    $table->json('__data')->nullable();
+                    $table->timestamps();
+                    $table->index(['event_type', 'vendors__id', 'is_active']);
+                });
+                $results['event_reminder_configs'] = 'CREATED';
+            }
+
+            if ($results['scheduled_events'] === 'MISSING') {
+                \Illuminate\Support\Facades\Schema::create('scheduled_events', function ($table) {
+                    $table->id('_id');
+                    $table->uuid('_uid')->unique();
+                    $table->string('event_type', 100)->index();
+                    $table->string('contact_phone', 20);
+                    $table->string('contact_name', 255)->nullable();
+                    $table->unsignedBigInteger('contacts__id')->nullable()->index();
+                    $table->unsignedBigInteger('vendors__id')->index();
+                    $table->timestamp('event_at');
+                    $table->string('timezone', 50)->default('UTC');
+                    $table->tinyInteger('status')->default(1)->index();
+                    $table->json('__data')->nullable();
+                    $table->timestamps();
+                    $table->index(['event_at', 'status']);
+                    $table->index(['vendors__id', 'event_type']);
+                });
+                $results['scheduled_events'] = 'CREATED';
+            }
+
+            if ($results['scheduled_messages'] === 'MISSING') {
+                \Illuminate\Support\Facades\Schema::create('scheduled_messages', function ($table) {
+                    $table->id('_id');
+                    $table->uuid('_uid')->unique();
+                    $table->unsignedBigInteger('scheduled_events__id')->nullable()->index();
+                    $table->string('message_type', 20)->default('template');
+                    $table->string('contact_phone', 20);
+                    $table->string('contact_name', 255)->nullable();
+                    $table->unsignedBigInteger('contacts__id')->nullable()->index();
+                    $table->unsignedBigInteger('vendors__id')->index();
+                    $table->timestamp('send_at')->index();
+                    $table->string('timezone', 50)->default('UTC');
+                    $table->tinyInteger('status')->default(1)->index();
+                    $table->integer('retries')->default(0);
+                    $table->string('template_name', 255)->nullable();
+                    $table->string('template_language', 10)->nullable();
+                    $table->json('__data')->nullable();
+                    $table->timestamps();
+                    $table->index(['send_at', 'status']);
+                    $table->index(['vendors__id', 'status']);
+                });
+                $results['scheduled_messages'] = 'CREATED';
+            }
+
+            return response()->json([
+                'success' => true,
+                'tables' => $results,
+                'timestamp' => now()->toDateTimeString()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'timestamp' => now()->toDateTimeString()
+            ], 500);
+        }
+    });
+
     // Test chat contacts API
     // URL: /debug-tools/YOUR_SECRET/test-contacts/VENDOR_UID
     Route::get('/test-contacts/{vendorUid}', function ($secret, $vendorUid) {
