@@ -37,6 +37,12 @@ class Kernel extends ConsoleKernel
                 ;
             }
         }
+
+        // Process scheduled messages every minute
+        $schedule->command('scheduling:process')
+            ->everyMinute()
+            ->name('process_scheduled_messages')
+            ->withoutOverlapping(2);
     }
 
     /**

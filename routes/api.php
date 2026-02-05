@@ -10,6 +10,7 @@ use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppServiceControlle
 use App\Yantrana\Components\WhatsAppService\Controllers\WhatsAppTemplateController;
 use App\Yantrana\Components\Media\Controllers\MediaController;
 use App\Yantrana\Components\User\Controllers\UserController;
+use App\Yantrana\Components\Scheduling\Controllers\SchedulingController;
 
 use App\Yantrana\Components\{
     Auth\Controllers\AuthController
@@ -334,6 +335,73 @@ Route::group([
         WhatsAppServiceController::class,
         'apiGetMessage',
     ])->name('api.vendor.message.read');
+
+    // Scheduling APIs
+    // Schedule an event with auto-generated reminders
+    Route::post('/events/schedule', [
+        SchedulingController::class,
+        'apiScheduleEvent',
+    ])->name('api.vendor.events.schedule');
+    // Get scheduled events
+    Route::get('/events/scheduled', [
+        SchedulingController::class,
+        'apiGetScheduledEvents',
+    ])->name('api.vendor.events.scheduled.read');
+    // Cancel scheduled event
+    Route::delete('/events/{eventUid}', [
+        SchedulingController::class,
+        'apiCancelEvent',
+    ])->name('api.vendor.events.cancel');
+
+    // Schedule a single message
+    Route::post('/messages/schedule', [
+        SchedulingController::class,
+        'apiScheduleMessage',
+    ])->name('api.vendor.messages.schedule');
+    // Schedule bulk messages
+    Route::post('/messages/schedule-bulk', [
+        SchedulingController::class,
+        'apiScheduleBulkMessages',
+    ])->name('api.vendor.messages.schedule_bulk');
+    // Get scheduled messages
+    Route::get('/messages/scheduled', [
+        SchedulingController::class,
+        'apiGetScheduledMessages',
+    ])->name('api.vendor.messages.scheduled.read');
+    // Get single scheduled message
+    Route::get('/messages/scheduled/{messageUid}', [
+        SchedulingController::class,
+        'apiGetScheduledMessage',
+    ])->name('api.vendor.messages.scheduled.single');
+    // Cancel scheduled message
+    Route::delete('/messages/scheduled/{messageUid}', [
+        SchedulingController::class,
+        'apiCancelMessage',
+    ])->name('api.vendor.messages.scheduled.cancel');
+
+    // Scheduling stats and health
+    Route::get('/scheduling/stats', [
+        SchedulingController::class,
+        'apiGetQueueStats',
+    ])->name('api.vendor.scheduling.stats');
+    Route::get('/scheduling/health', [
+        SchedulingController::class,
+        'apiGetHealth',
+    ])->name('api.vendor.scheduling.health');
+
+    // Reminder configs management
+    Route::post('/scheduling/reminder-configs', [
+        SchedulingController::class,
+        'apiSaveReminderConfig',
+    ])->name('api.vendor.scheduling.reminder_configs.save');
+    Route::get('/scheduling/reminder-configs', [
+        SchedulingController::class,
+        'apiGetReminderConfigs',
+    ])->name('api.vendor.scheduling.reminder_configs.read');
+    Route::delete('/scheduling/reminder-configs/{configUid}', [
+        SchedulingController::class,
+        'apiDeleteReminderConfig',
+    ])->name('api.vendor.scheduling.reminder_configs.delete');
 });
 
 // Mobile app apis
