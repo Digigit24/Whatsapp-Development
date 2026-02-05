@@ -1610,6 +1610,30 @@ Route::prefix('debug-tools/{secret}')->group(function () {
         ]);
     });
 
+    // Run database migrations
+    // URL: /debug-tools/YOUR_SECRET/run-migrate
+    Route::get('/run-migrate', function ($secret) {
+        if ($secret !== 'mySecretKey2024') {
+            abort(403, 'Invalid secret');
+        }
+        try {
+            \Artisan::call('migrate', ['--force' => true]);
+            $output = \Artisan::output();
+            return response()->json([
+                'success' => true,
+                'message' => 'Migrations executed successfully',
+                'output' => $output,
+                'timestamp' => now()->toDateTimeString()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'timestamp' => now()->toDateTimeString()
+            ], 500);
+        }
+    });
+
     // Test chat contacts API
     // URL: /debug-tools/YOUR_SECRET/test-contacts/VENDOR_UID
     Route::get('/test-contacts/{vendorUid}', function ($secret, $vendorUid) {
