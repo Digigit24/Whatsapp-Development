@@ -1192,6 +1192,16 @@ Route::middleware([
                     'prepareContactList',
                 ])->name('vendor.contact.read.list');
 
+                Route::get('/filter-support-data', [
+                    ContactController::class,
+                    'getContactFilterSupportData',
+                ])->name('vendor.contact.read.filter_support_data');
+                // Contact store filter data
+                Route::post('/filter-store-process', [
+                    ContactController::class,
+                    'processStoreContactFilter',
+                ])->name('vendor.contact.write.store_contact_filter');
+
                 // Contact delete process
                 Route::post('/{contactIdOrUid}/delete-process', [
                     ContactController::class,
