@@ -1027,6 +1027,12 @@ Route::middleware([
                 'updateDisplayName',
             ])->name('vendor.whatsapp.display_name.write');
 
+
+             Route::post('/register-phone-number', [
+                WhatsAppServiceController::class,
+                'registerPhoneNumber',
+            ])->name('vendor.whatsapp.register_phone_number.write');
+
             Route::post('/two-step-verification/update', [
                 WhatsAppServiceController::class,
                 'updateTwoStepVerification',
