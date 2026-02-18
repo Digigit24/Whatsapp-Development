@@ -311,6 +311,7 @@ class CampaignEngine extends BaseEngine implements CampaignEngineInterface
     {
         // data fetch request
         $campaign = $this->campaignRepository->fetchIt($campaignIdOrUid);
+        abortIf(__isEmpty($campaign));
         // data fetch request
         $campaignCollection = $this->campaignRepository->fetchCampaignQueueLogTableSource($campaign->_id);
         $isDemoModeAndAccount = isThisDemoVendorAccountAccess();
