@@ -143,7 +143,7 @@ class CampaignRepository extends BaseRepository implements CampaignRepositoryInt
      *
      * @return mixed
      *---------------------------------------------------------------- */
-    public function fetchCampaignQueueLogTableSource($campaignId)
+    public function fetchCampaignQueueLogTableSource($campaignId, $logStatus = null)
     {
         // basic configurations for dataTables data
         $dataTableConfig = [
@@ -169,9 +169,14 @@ class CampaignRepository extends BaseRepository implements CampaignRepositoryInt
             ]
         ]);
         // Get Model result for dataTables
-        return WhatsAppMessageQueueModel::where('campaigns__id', $campaignId)
-        ->whereNotIn('status', [5]) // Expired
-        ->select(
+        $query = WhatsAppMessageQueueModel::where('campaigns__id', $campaignId);
+        // filter by log status if provided
+        if ($logStatus and $logStatus !== 'all') {
+            $query->where('status', (int) $logStatus);
+        } else {
+            $query->whereNotIn('status', [5]); // Expired
+        }
+        return $query->select(
             DB::raw(
                 "*,
             JSON_UNQUOTE(JSON_EXTRACT(__data, '$.contact_data.first_name')) as first_name,

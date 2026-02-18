@@ -299,6 +299,7 @@ class CampaignEngine extends BaseEngine implements CampaignEngineInterface
             'statusText' => $statusText,
             'campaignStatus' => $campaignStatus,
             'queueFailedCount' => $queueFailedCount,
+            'messageQueueStatusCodes' => configItem('message_queue_status_codes'),
         ]);
     }
     /**
@@ -307,13 +308,13 @@ class CampaignEngine extends BaseEngine implements CampaignEngineInterface
      * @param  mix  $campaignIdOrUid
      * @return object
      *---------------------------------------------------------------- */
-    public function prepareCampaignQueueLogList($campaignIdOrUid)
+    public function prepareCampaignQueueLogList($campaignIdOrUid, $logStatus = null)
     {
         // data fetch request
         $campaign = $this->campaignRepository->fetchIt($campaignIdOrUid);
         abortIf(__isEmpty($campaign));
         // data fetch request
-        $campaignCollection = $this->campaignRepository->fetchCampaignQueueLogTableSource($campaign->_id);
+        $campaignCollection = $this->campaignRepository->fetchCampaignQueueLogTableSource($campaign->_id, $logStatus);
         $isDemoModeAndAccount = isThisDemoVendorAccountAccess();
         $formattedStatus = configItem('message_queue_status_codes');
         $requireColumns = [

@@ -175,8 +175,9 @@ class CampaignController extends BaseController
     public function campaignQueueLogListView($campaignIdOrUid)
     {
         validateVendorAccess('manage_campaigns');
+        $logStatus = request()->get('logStatus');
         // respond with dataTables preparations
-        return $this->campaignEngine->prepareCampaignQueueLogList($campaignIdOrUid);
+        return $this->campaignEngine->prepareCampaignQueueLogList($campaignIdOrUid, $logStatus);
     }
 
     /**
