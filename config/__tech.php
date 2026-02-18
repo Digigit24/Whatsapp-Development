@@ -256,7 +256,16 @@ $techAppConfig = [
         5 => __tr('Expired'),
         6 => __tr('Processed but Response Awaited'),
         7 => __tr('Aborted'),
-    ],    
+    ],
+    // executed message statuses
+    'executed_message_status_codes' => [
+        'all' => __tr('All'),
+        'sent' => __tr('Sent'),
+        'delivered' => __tr('Delivered'),
+        'read' => __tr('Read'),
+        'accepted' => __tr('Accepted'),
+        'failed' => __tr('Failed'),
+    ],
     // Chat history string messages
     'system_message_actions' => [
         'ASSIGN_TEAM_MEMBER' => __tr('Assigned __dynamicTitle__ as a Team Member.'),

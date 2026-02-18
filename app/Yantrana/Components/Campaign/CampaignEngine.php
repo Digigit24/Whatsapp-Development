@@ -300,6 +300,7 @@ class CampaignEngine extends BaseEngine implements CampaignEngineInterface
             'campaignStatus' => $campaignStatus,
             'queueFailedCount' => $queueFailedCount,
             'messageQueueStatusCodes' => configItem('message_queue_status_codes'),
+            'executedMessageStatusCodes' => configItem('executed_message_status_codes'),
         ]);
     }
     /**
